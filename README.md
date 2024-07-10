@@ -20,11 +20,11 @@ A zero dependency project starter template with HTTP server for Go.
 
 - `/app` - app specific code
   - `/app/config` - app configuration
-  - `/app/server` - HTTP server
-    - `/app/server/handler` - HTTP handlers
-    - `/app/server/middleware` - HTTP middleware
+  - `/app/handler` - HTTP handlers
+  - `/app/middleware` - HTTP middleware
 - `/cmd` - entry points
   - `/cmd/app` - app entry point
+- `/server` - HTTP server
 
 ## Makefile
 

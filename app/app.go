@@ -9,9 +9,9 @@ import (
 	"syscall"
 
 	"github.com/shayanderson/go-project/app/config"
-	"github.com/shayanderson/go-project/app/server"
-	"github.com/shayanderson/go-project/app/server/handler"
-	"github.com/shayanderson/go-project/app/server/middleware"
+	"github.com/shayanderson/go-project/app/handler"
+	"github.com/shayanderson/go-project/app/middleware"
+	"github.com/shayanderson/go-project/server"
 )
 
 // App is the main application
@@ -67,14 +67,14 @@ func (a *App) Run(ctx context.Context) error {
 	// http middleware
 	srv.Router.Use(server.LoggerMiddleware)
 	srv.Router.Use(server.RecoverMiddleware)
-	srv.Router.Use(middleware.TestMiddleware)
+	srv.Router.Use(middleware.ExampleMiddleware)
 
 	// http handlers
-	testHandler := handler.NewTestHandler()
+	exampleHandler := handler.NewExampleHandler()
 
 	// http routes
-	srv.Router.Get("/test", testHandler.Get, middleware.TestHandlerMiddleware)
-	srv.Router.Get("/test/{name}", testHandler.GetEchoName)
+	srv.Router.Get("/example", exampleHandler.Get, middleware.ExampleHandlerMiddleware)
+	srv.Router.Get("/example/{name}", exampleHandler.GetEchoName)
 
 	a.run(srv.Start)
 	a.run(func() error {
