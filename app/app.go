@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/signal"
 	"sync"
-	"syscall"
 
 	"github.com/shayanderson/go-project/app/config"
 	"github.com/shayanderson/go-project/app/handler"
@@ -52,7 +51,7 @@ func (a *App) run(fn func() error) {
 
 // Run runs the app
 func (a *App) Run(ctx context.Context) error {
-	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
+	ctx, stop := signal.NotifyContext(ctx, os.Interrupt)
 	defer stop()
 
 	if err := a.init(ctx); err != nil {
