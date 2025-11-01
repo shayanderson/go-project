@@ -3,93 +3,111 @@ package app
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"sync"
 
-	"github.com/shayanderson/go-project/app/config"
 	"github.com/shayanderson/go-project/app/handler"
-	"github.com/shayanderson/go-project/app/middleware"
-	"github.com/shayanderson/go-project/server"
 )
 
 // App is the main application
 type App struct {
+	config Config
+}
+
+// New creates a new App instance
+func New(config Config) (*App, error) {
+	return &App{config: config}, nil
+}
+
+// Run runs the application
+func (a *App) Run(ctx context.Context) error {
+	ctx, stop := signal.NotifyContext(ctx, os.Interrupt)
+	defer stop()
+	runner, ctx := newRunner(ctx)
+
+	srv := newServer(ServerOptions{
+		Addr:              a.config.HTTPServerAddr,
+		ReadHeaderTimeout: a.config.HTTPServerReadHeaderTimeout,
+		ReadTimeout:       a.config.HTTPServerReadTimeout,
+		WriteTimeout:      a.config.HTTPServerWriteTimeout,
+	})
+
+	// example middleware: logging
+	srv.Use(func(next Handler) Handler {
+		return Handler(func(w http.ResponseWriter, r *http.Request) error {
+			slog.Info("[http] handling request", "method", r.Method, "url", r.URL.String())
+			return next(w, r)
+		})
+	})
+
+	rootHandler := handler.NewRoot()
+	srv.Handle(httpRootPattern, rootHandler.Index, func(next Handler) Handler {
+		return Handler(func(w http.ResponseWriter, r *http.Request) error {
+			slog.Info("[http] root handler middleware")
+			return next(w, r)
+		})
+	})
+	srv.Handle("/", rootHandler.NotFound) // catch-all for not found
+
+	runner.run(func() error {
+		if err := srv.Start(); err != nil {
+			return fmt.Errorf("http server start failed: %w", err)
+		}
+		return nil
+	})
+
+	runner.run(func() error {
+		<-ctx.Done()
+		if err := srv.Stop(); err != nil {
+			return fmt.Errorf("http server stop failed: %w", err)
+		}
+		return nil
+	})
+
+	return runner.wait()
+}
+
+// runner is a task runner
+type runner struct {
 	cancel  func(error)
 	err     error
 	errOnce sync.Once
 	wg      sync.WaitGroup
 }
 
-// New creates a new App
-func New() *App {
-	return &App{}
-}
-
-// init initializes the app
-func (a *App) init(ctx context.Context) error {
-	return nil
+// newRunner creates a new runner
+func newRunner(ctx context.Context) (*runner, context.Context) {
+	ctx, cancel := context.WithCancelCause(ctx)
+	return &runner{cancel: cancel}, ctx
 }
 
 // run runs a function and handles errors
 // sets the first error to the app error
-func (a *App) run(fn func() error) {
-	a.wg.Add(1)
+func (g *runner) run(fn func() error) {
+	g.wg.Add(1)
 	go func() {
-		defer a.wg.Done()
+		defer g.wg.Done()
 
 		if err := fn(); err != nil {
-			a.errOnce.Do(func() {
-				a.err = err
-				if a.cancel != nil {
-					a.cancel(a.err)
+			g.errOnce.Do(func() {
+				g.err = err
+				if g.cancel != nil {
+					g.cancel(g.err)
 				}
 			})
 		}
 	}()
 }
 
-// Run runs the app
-func (a *App) Run(ctx context.Context) error {
-	ctx, stop := signal.NotifyContext(ctx, os.Interrupt)
-	defer stop()
-
-	if err := a.init(ctx); err != nil {
-		return fmt.Errorf("app init failed: %w", err)
-	}
-
-	ctx, a.cancel = context.WithCancelCause(ctx)
-
-	// http server
-	srv := server.New(config.Config.ServerPort)
-
-	// http middleware
-	srv.Router.Use(server.LoggerMiddleware)
-	srv.Router.Use(server.RecoverMiddleware)
-	srv.Router.Use(middleware.ExampleMiddleware)
-
-	// http handlers
-	exampleHandler := handler.NewExampleHandler()
-
-	// http routes
-	srv.Router.Get("/example", exampleHandler.Get, middleware.ExampleHandlerMiddleware)
-	srv.Router.Get("/example/{name}", exampleHandler.GetEchoName)
-
-	a.run(srv.Start)
-	a.run(func() error {
-		<-ctx.Done()
-		return srv.Stop(ctx)
-	})
-
-	return a.wait()
-}
-
 // wait blocks until all app goroutines are done
 // returns the first error if exists
-func (a *App) wait() error {
-	a.wg.Wait()
-	if a.cancel != nil {
-		a.cancel(a.err)
+func (g *runner) wait() error {
+	g.wg.Wait()
+	if g.cancel != nil {
+		g.cancel(g.err)
 	}
-	return a.err
+	return g.err
 }

@@ -8,9 +8,37 @@ import (
 	"time"
 
 	"github.com/shayanderson/go-project/app"
-	"github.com/shayanderson/go-project/app/config"
 )
 
+// main is the entry point of the application
+func main() {
+	ctx := context.Background()
+	config, err := app.NewConfig()
+	if err != nil {
+		fatal("failed to create config: %v", err)
+	}
+
+	if config.Debug {
+		loggerOptions.Level = slog.LevelDebug
+	}
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, loggerOptions)))
+
+	app, err := app.New(config)
+	if err != nil {
+		fatal("failed to create app: %v", err)
+	}
+	if err := app.Run(ctx); err != nil && err != context.Canceled {
+		fatal("app run failed: %v", err)
+	}
+}
+
+// fatal logs a fatal error message and exits the application
+func fatal(format string, args ...any) {
+	slog.Error(fmt.Sprintf(format, args...))
+	os.Exit(1)
+}
+
+// loggerOptions holds the options for the slog logger
 var loggerOptions = &slog.HandlerOptions{
 	Level: slog.LevelInfo,
 	ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
@@ -22,23 +50,4 @@ var loggerOptions = &slog.HandlerOptions{
 
 		return a
 	},
-}
-
-func init() {
-	if config.Config.Debug {
-		loggerOptions.Level = slog.LevelDebug
-	}
-	slog.SetDefault(
-		slog.New(slog.NewJSONHandler(os.Stdout, loggerOptions)),
-	)
-}
-
-func main() {
-	ctx := context.Background()
-	app := app.New()
-
-	if err := app.Run(ctx); err != nil && err != context.Canceled {
-		fmt.Printf("app run failed: %v\n", err)
-		os.Exit(1)
-	}
 }
