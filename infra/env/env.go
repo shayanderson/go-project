@@ -27,17 +27,6 @@ func Int(key string, fallback int) int {
 	return i
 }
 
-// Must checks that the given environment variables are set and not empty
-// panics if any are missing or empty
-func Must(keys ...string) {
-	for _, key := range keys {
-		v, ok := os.LookupEnv(key)
-		if !ok || v == "" {
-			panic("required env var missing or empty: " + key)
-		}
-	}
-}
-
 // MustBool retrieves the boolean value of the environment variable by key
 // panics if the variable is missing or empty
 func MustBool(key string) bool {
