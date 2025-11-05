@@ -13,6 +13,8 @@ A zero dependency project starter template with HTTP server for Go.
 
 ## Assertion Helpers
 
+### Assert Package
+
 The `service/assert` package provides a set of assertion functions for validation purposes. These functions help ensure that certain conditions are met, and if not, they trigger a panic with message and stack trace.
 
 Example:
@@ -42,6 +44,8 @@ assert.NotNil(b, "instance should not be %q", "nil")
 - `NotNil(v any)` — asserts that the given value is not `nil`
 - `True(condition bool)` — asserts that the given condition is `true`
 - `Type(a, b any)` — asserts that the types of `a` and `b` are the same
+
+### Test Package
 
 The `service/assert/test` package provides a set of assertion functions for testing purposes. These functions help ensure that certain conditions are met during tests, and if not, they trigger `t.Fatal` with a message and stack trace.
 
