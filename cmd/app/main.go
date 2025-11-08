@@ -7,7 +7,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/shayanderson/go-project/app"
+	"github.com/shayanderson/go-project/v2/app"
 )
 
 // main is the entry point of the application

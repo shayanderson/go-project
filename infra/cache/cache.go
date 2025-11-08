@@ -20,6 +20,18 @@ func New[T any, K comparable]() *Cache[T, K] {
 	}
 }
 
+// All returns all items in the cache
+func (c *Cache[T, K]) All() []T {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	r := make([]T, 0, len(c.store))
+	for _, v := range c.store {
+		r = append(r, v)
+	}
+	return r
+}
+
 // Clear clears all items from the cache
 func (c *Cache[T, K]) Clear() {
 	c.mu.Lock()

@@ -6,16 +6,61 @@ A zero dependency project starter template with HTTP server for Go.
 
 - simple project structure
 - zero dependency
+- testable code
 - HTTP server
   - `net/http` compatible
   - middleware support
   - centralized error handling
+  - test server
 
-## Assertion Helpers
+## Project Structure
 
-### Assert Package
+- `app/` - application specific code: start/stop, config, dependency injection, etc.
+- `cmd/` - main application entry point
+- `entity/` - domain entities
+- `infra/` - infrastructure code: database, cache, external services, etc.
+- [`internal/`](#internal-packages) - internal packages: assertion helpers, test helpers, HTTP server, etc.
+- [`service/`](#service-layer) - services: domain logic, use cases, handlers, etc.
 
-The `service/assert` package provides a set of assertion functions for validation purposes. These functions help ensure that certain conditions are met, and if not, they trigger a panic with message and stack trace.
+## Run Example App
+
+Run the example API app:
+
+```
+make run
+```
+
+Then create a new item:
+
+```
+curl -H'content-type:application/json' \
+ -d'{"id":1,"name":"test item 1"}' \
+ localhost:8080/items
+```
+
+Example response:
+
+```
+{"id":1,"name":"test item 1"}
+```
+
+Get all items:
+
+```
+curl localhost:8080/items
+```
+
+Example response:
+
+```
+[{"id":1,"name":"test item 1"}]
+```
+
+## Internal Packages
+
+### Runtime Assertion Helpers
+
+The `internal/assert` package provides a set of assertion functions for validation purposes. These functions help ensure that certain conditions are met, and if not, they trigger a panic with message and stack trace.
 
 Example:
 
@@ -45,9 +90,9 @@ assert.NotNil(b, "instance should not be %q", "nil")
 - `True(condition bool)` — asserts that the given condition is `true`
 - `Type(a, b any)` — asserts that the types of `a` and `b` are the same
 
-### Test Package
+### Testing Assertion Helpers
 
-The `service/assert/test` package provides a set of assertion functions for testing purposes. These functions help ensure that certain conditions are met during tests, and if not, they trigger `t.Fatal` with a message and stack trace.
+The `internal/test` package provides a set of assertion functions for testing purposes. These functions help ensure that certain conditions are met during tests, and if not, they trigger `t.Fatal` with a message and stack trace.
 
 Example:
 
@@ -80,3 +125,18 @@ func TestApp(t *testing.T) {
 - `Panics(t TestingT, f func())` — asserts that the given function panics when called
 - `True(t TestingT, condition bool)` — asserts that the given condition is `true`
 - `Type(t TestingT, a, b any)` — asserts that the types of `a` and `b` are the same
+
+## Service Layer
+
+The `service` layer contains the core business logic of the application.
+
+- `item/` - example item service with in-memory storage
+  - `handler.go` - HTTP handlers for item service
+  - `service.go` - item service implementation
+- `tests/` - service layer tests
+  - `item_test.go` - tests for item handler and service
+    - not located in `item/` package to avoid import cycle with `service/api.go` - where all routes are registered in a single location
+  - `test_test.go` - test helpers for service layer tests
+- `api.go` - registers all service routes to the HTTP server, middleware, etc.
+- `middleware.go` - common middleware for all services
+- `router.go` - HTTP router implementation

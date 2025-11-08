@@ -63,6 +63,12 @@ func TestCache(t *testing.T) {
 	if size := c.Size(); size != 2 {
 		t.Fatalf("expected size to be 2, got %d", size)
 	}
+
+	r := c.All()
+	if len(r) != 2 {
+		t.Fatalf("expected All to return 2 items, got %d", len(r))
+	}
+
 	c.Clear()
 	if size := c.Size(); size != 0 {
 		t.Fatalf("expected size to be 0 after clear, got %d", size)

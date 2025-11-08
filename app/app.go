@@ -3,13 +3,14 @@ package app
 import (
 	"context"
 	"fmt"
-	"log/slog"
-	"net/http"
 	"os"
 	"os/signal"
 	"sync"
 
-	"github.com/shayanderson/go-project/app/handler"
+	"github.com/shayanderson/go-project/v2/entity"
+	"github.com/shayanderson/go-project/v2/infra/cache"
+	"github.com/shayanderson/go-project/v2/internal/server"
+	"github.com/shayanderson/go-project/v2/service"
 )
 
 // App is the main application
@@ -28,45 +29,44 @@ func (a *App) Run(ctx context.Context) error {
 	defer stop()
 	runner, ctx := newRunner(ctx)
 
-	srv := newServer(ServerOptions{
+	// set global http bind limit
+	server.LimitReadSize = a.config.HTTPBindLimitReadSize
+
+	// create http server
+	srv := server.New(server.Options{
 		Addr:              a.config.HTTPServerAddr,
 		ReadHeaderTimeout: a.config.HTTPServerReadHeaderTimeout,
 		ReadTimeout:       a.config.HTTPServerReadTimeout,
 		WriteTimeout:      a.config.HTTPServerWriteTimeout,
 	})
 
-	// example middleware: logging
-	srv.Use(func(next Handler) Handler {
-		return Handler(func(w http.ResponseWriter, r *http.Request) error {
-			slog.Info("[http] handling request", "method", r.Method, "url", r.URL.String())
-			return next(w, r)
-		})
+	// create api service
+	api := service.NewAPI(srv, service.Infra{
+		// inject item store
+		// normally this would be a database or persistent store
+		// like: `infra/db/item.go` and use `db.NewItem(...)`
+		ItemStore: cache.New[entity.Item, int](),
 	})
 
-	rootHandler := handler.NewRoot()
-	srv.Handle(httpRootPattern, rootHandler.Index, func(next Handler) Handler {
-		return Handler(func(w http.ResponseWriter, r *http.Request) error {
-			slog.Info("[http] root handler middleware")
-			return next(w, r)
-		})
-	})
-	srv.Handle("/", rootHandler.NotFound) // catch-all for not found
-
+	// start api server
 	runner.run(func() error {
-		if err := srv.Start(); err != nil {
+		if err := api.Start(); err != nil {
 			return fmt.Errorf("http server start failed: %w", err)
 		}
 		return nil
 	})
 
+	// handle shutdown
 	runner.run(func() error {
 		<-ctx.Done()
-		if err := srv.Stop(); err != nil {
+		if err := api.Stop(); err != nil {
 			return fmt.Errorf("http server stop failed: %w", err)
 		}
 		return nil
 	})
 
+	// wait for all tasks to complete
+	// in this case, wait for api/http server to stop
 	return runner.wait()
 }
 

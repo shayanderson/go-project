@@ -1,8 +1,7 @@
-package app
+package server
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -10,49 +9,30 @@ import (
 	"time"
 )
 
-// httpRootPattern is a pattern that matches the root path "/"
-const httpRootPattern = "/{$}"
-
-// StatusError is an error with an associated HTTP status code
-type StatusError interface {
-	error
-	Status() int
-}
-
-// statusError is a simple implementation of StatusError
-type statusError struct {
-	err    error
-	status int
-}
-
-// Error implements the error interface
-func (s statusError) Error() string {
-	return s.err.Error()
-}
-
-// Status implements the StatusError interface
-func (s statusError) Status() int {
-	return s.status
-}
+// RootPattern is a pattern that matches the root path "/"
+const RootPattern = "/{$}"
 
 // Handler is a http handler that returns an error
-type Handler func(http.ResponseWriter, *http.Request) error
+type Handler func(*Context) error
 
-// ServeHTTP implements the http.Handler interface
-func (r Handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	// log request
-	slog.Info(
-		fmt.Sprintf(
-			"[http] %s http://%s%s %s from %s",
-			req.Method,
-			req.Host,
-			req.RequestURI,
-			req.Proto,
-			req.RemoteAddr,
-		),
-	)
+// Serve serves an HTTP request
+func (h Handler) Serve(c *Context) {
+	req := c.Request()
+	if !c.isMiddleware() {
+		// log request when not in middleware
+		slog.Info(
+			fmt.Sprintf(
+				"[http] %s http://%s%s %s from %s",
+				req.Method,
+				req.Host,
+				req.RequestURI,
+				req.Proto,
+				req.RemoteAddr,
+			),
+		)
+	}
 
-	if hErr := r(w, req); hErr != nil {
+	if hErr := h(c); hErr != nil {
 		var err StatusError
 		if sErr, ok := hErr.(StatusError); ok {
 			err = sErr
@@ -73,16 +53,23 @@ func (r Handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			err.Status(),
 		), slog.String("err", err.Error()))
 		// write error response
-		w.Header().Set("Content-Type", "application/json")
 		status := err.Status()
 		if status < 400 || status > 599 {
 			status = http.StatusInternalServerError
 		}
-		w.WriteHeader(status)
-		if err := json.NewEncoder(w).Encode(map[string]string{"error": err.Error()}); err != nil {
+		c.Status(status)
+		if err := c.JSON(map[string]string{"error": err.Error()}); err != nil {
 			slog.Error("[http] failed to write error response", slog.String("err", err.Error()))
 		}
 	}
+}
+
+// ServeHTTP serves an HTTP request
+func (r Handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	c := NewContext(w, req)
+	defer c.request.Body.Close()
+
+	r.Serve(c)
 }
 
 // Middleware is a function that wraps a Handler
@@ -96,8 +83,8 @@ func chain(h Handler, middleware ...Middleware) Handler {
 	return h
 }
 
-// ServerOptions holds the configuration options for the Server
-type ServerOptions struct {
+// Options holds the configuration options for the Server
+type Options struct {
 	// Addr is the address to listen on
 	Addr string
 	// CertFile is the path to the TLS certificate file
@@ -117,15 +104,15 @@ type ServerOptions struct {
 
 // Server is a simple HTTP server with middleware support
 type Server struct {
-	options    ServerOptions
+	options    Options
 	middleware []Middleware
 	mux        *http.ServeMux
 	server     *http.Server
 	stopping   atomic.Bool
 }
 
-// newServer creates a new Server instance
-func newServer(options ServerOptions) *Server {
+// New creates a new server instance
+func New(options Options) *Server {
 	s := &Server{
 		options: options,
 		mux:     http.NewServeMux(),
@@ -141,8 +128,8 @@ func newServer(options ServerOptions) *Server {
 }
 
 // Handle registers a new route with a handler
-func (s *Server) Handle(pattern string, handler Handler, middlewares ...Middleware) {
-	s.mux.Handle(pattern, chain(handler, middlewares...))
+func (s *Server) Handle(pattern string, handler Handler, middleware ...Middleware) {
+	s.mux.Handle(pattern, chain(handler, middleware...))
 }
 
 // Mux returns the underlying http.ServeMux
@@ -152,29 +139,32 @@ func (s *Server) Mux() *http.ServeMux {
 
 // Start starts the HTTP server
 func (s *Server) Start() error {
-	h := Handler(func(w http.ResponseWriter, r *http.Request) error {
-		s.mux.ServeHTTP(w, r)
+	// base handler to start the chain
+	h := Handler(func(c *Context) error {
+		s.mux.ServeHTTP(c.Writer(), c.Request())
 		return nil
 	})
+
+	// apply middleware
 	for i := len(s.middleware) - 1; i >= 0; i-- {
 		h = s.middleware[i](h)
 	}
-	s.server.Handler = h
 
+	// wrap base handler
+	s.server.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c := NewContext(w, r)
+		c.middleware()
+		h.Serve(c)
+	})
+
+	slog.Info("[http] starting server", slog.String("addr", s.options.Addr))
 	var err error
 	if s.options.CertFile != "" && s.options.CertKeyFile != "" {
-		slog.Info(
-			"[http] starting server", slog.String("addr", s.options.Addr), slog.Bool("tls", true),
-		)
 		err = s.server.ListenAndServeTLS(s.options.CertFile, s.options.CertKeyFile)
 	} else {
-		slog.Info(
-			"[http] starting server", slog.String("addr", s.options.Addr), slog.Bool("tls", false),
-		)
 		err = s.server.ListenAndServe()
 	}
 	if err != nil && err == http.ErrServerClosed && s.stopping.Load() {
-		// server is stopping, ignore error
 		return nil
 	}
 	return err
@@ -190,6 +180,6 @@ func (s *Server) Stop() error {
 }
 
 // Use adds middleware to the server
-func (s *Server) Use(middlewares ...Middleware) {
-	s.middleware = append(s.middleware, middlewares...)
+func (s *Server) Use(middleware ...Middleware) {
+	s.middleware = append(s.middleware, middleware...)
 }
