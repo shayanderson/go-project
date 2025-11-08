@@ -64,12 +64,13 @@ func (c *Context) isMiddleware() bool {
 // if an error is provided, it returns that error instead
 // URL query parameter "pretty" can be used to pretty-print the JSON
 func (c *Context) JSON(v any, err ...error) error {
-	if len(err) > 0 && err[0] != nil {
-		return err[0]
-	}
-
 	w := c.Writer()
 	w.Header().Set("Content-Type", "application/json")
+
+	if len(err) > 0 && err[0] != nil {
+		return err[0] // return the error instead
+	}
+
 	enc := json.NewEncoder(w)
 	if pretty := c.request.URL.Query().Has("pretty"); pretty {
 		enc.SetIndent("", "  ")

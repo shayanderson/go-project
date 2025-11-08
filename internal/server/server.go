@@ -59,7 +59,7 @@ func (h Handler) Serve(c *Context) {
 		}
 		c.Status(status)
 		if err := c.JSON(map[string]string{"error": err.Error()}); err != nil {
-			slog.Error("[http] failed to write error response", slog.String("err", err.Error()))
+			panic("[http] failed to write error response: " + err.Error())
 		}
 	}
 }
