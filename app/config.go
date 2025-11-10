@@ -3,7 +3,7 @@ package app
 import (
 	"time"
 
-	"github.com/shayanderson/go-project/v2/infra/env"
+	"github.com/shayanderson/go-project/v2/internal/env"
 )
 
 // Config holds the application configuration

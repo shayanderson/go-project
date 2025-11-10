@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"sync"
 
 	"github.com/shayanderson/go-project/v2/entity"
 	"github.com/shayanderson/go-project/v2/infra/cache"
 	"github.com/shayanderson/go-project/v2/internal/server"
+	"github.com/shayanderson/go-project/v2/internal/work"
 	"github.com/shayanderson/go-project/v2/service"
 )
 
@@ -27,7 +27,7 @@ func New(config Config) (*App, error) {
 func (a *App) Run(ctx context.Context) error {
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt)
 	defer stop()
-	runner, ctx := newRunner(ctx)
+	runner, ctx := work.NewRunner(ctx)
 
 	// set global http bind limit
 	server.LimitReadSize = a.config.HTTPBindLimitReadSize
@@ -49,7 +49,7 @@ func (a *App) Run(ctx context.Context) error {
 	})
 
 	// start api server
-	runner.run(func() error {
+	runner.Run(func() error {
 		if err := api.Start(); err != nil {
 			return fmt.Errorf("http server start failed: %w", err)
 		}
@@ -57,7 +57,7 @@ func (a *App) Run(ctx context.Context) error {
 	})
 
 	// handle shutdown
-	runner.run(func() error {
+	runner.Run(func() error {
 		<-ctx.Done()
 		if err := api.Stop(); err != nil {
 			return fmt.Errorf("http server stop failed: %w", err)
@@ -67,47 +67,5 @@ func (a *App) Run(ctx context.Context) error {
 
 	// wait for all tasks to complete
 	// in this case, wait for api/http server to stop
-	return runner.wait()
-}
-
-// runner is a task runner
-type runner struct {
-	cancel  func(error)
-	err     error
-	errOnce sync.Once
-	wg      sync.WaitGroup
-}
-
-// newRunner creates a new runner
-func newRunner(ctx context.Context) (*runner, context.Context) {
-	ctx, cancel := context.WithCancelCause(ctx)
-	return &runner{cancel: cancel}, ctx
-}
-
-// run runs a function and handles errors
-// sets the first error to the app error
-func (g *runner) run(fn func() error) {
-	g.wg.Add(1)
-	go func() {
-		defer g.wg.Done()
-
-		if err := fn(); err != nil {
-			g.errOnce.Do(func() {
-				g.err = err
-				if g.cancel != nil {
-					g.cancel(g.err)
-				}
-			})
-		}
-	}()
-}
-
-// wait blocks until all app goroutines are done
-// returns the first error if exists
-func (g *runner) wait() error {
-	g.wg.Wait()
-	if g.cancel != nil {
-		g.cancel(g.err)
-	}
-	return g.err
+	return runner.Wait()
 }

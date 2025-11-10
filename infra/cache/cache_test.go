@@ -8,9 +8,6 @@ func TestCache(t *testing.T) {
 	if c == nil {
 		t.Fatal("expected cache to be created")
 	}
-	if c.metrics == nil {
-		t.Fatal("expected metrics to be initialized")
-	}
 	if c.store == nil {
 		t.Fatal("expected store to be initialized")
 	}
@@ -33,14 +30,6 @@ func TestCache(t *testing.T) {
 		t.Fatalf("expected value %+v, got %+v", v, got)
 	}
 
-	m := c.Metrics()
-	if m.Hits != 1 {
-		t.Fatalf("expected hits to be 1, got %d", m.Hits)
-	}
-	if m.Misses != 0 {
-		t.Fatalf("expected misses to be 0, got %d", m.Misses)
-	}
-
 	c.Delete(k)
 	if size := c.Size(); size != 0 {
 		t.Fatalf("expected size to be 0 after delete, got %d", size)
@@ -49,13 +38,6 @@ func TestCache(t *testing.T) {
 	_, ok = c.Get(k)
 	if ok {
 		t.Fatalf("expected key %s to be deleted", k)
-	}
-	m = c.Metrics()
-	if m.Hits != 1 {
-		t.Fatalf("expected hits to be 1, got %d", m.Hits)
-	}
-	if m.Misses != 1 {
-		t.Fatalf("expected misses to be 1, got %d", m.Misses)
 	}
 
 	c.Put(k, v)
