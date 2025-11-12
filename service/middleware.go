@@ -13,6 +13,7 @@ type ExampleMiddleware struct{}
 func (m ExampleMiddleware) Handle(next server.Handler) server.Handler {
 	return func(c *server.Context) error {
 		slog.Info("example middleware invoked")
+		c.Set("example", "value from middleware") // example of setting a value in the context
 		return next(c)
 	}
 }

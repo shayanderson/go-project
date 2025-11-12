@@ -55,6 +55,11 @@ func (c *Context) Context() context.Context {
 	return c.ctx
 }
 
+// Get retrieves a value from the context by key
+func (c *Context) Get(key any) any {
+	return c.ctx.Value(key)
+}
+
 // isMiddleware returns true if the context is being used in middleware
 func (c *Context) isMiddleware() bool {
 	return c.isMW
@@ -99,6 +104,12 @@ func (c *Context) Param(key string) (string, error) {
 // Request returns the underlying http.Request
 func (c *Context) Request() *http.Request {
 	return c.request
+}
+
+// Set sets a value in the context by key
+func (c *Context) Set(key, value any) {
+	c.ctx = context.WithValue(c.ctx, key, value)
+	c.request = c.request.WithContext(c.ctx)
 }
 
 // Status sets the HTTP status code for the response

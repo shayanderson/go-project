@@ -1,6 +1,8 @@
 package item
 
 import (
+	"log/slog"
+
 	"github.com/shayanderson/go-project/v2/internal/assert"
 	"github.com/shayanderson/go-project/v2/internal/server"
 )
@@ -18,6 +20,8 @@ func NewHandler(service *Service) *Handler {
 
 // Get handles GET /items
 func (h *Handler) Get(c *server.Context) error {
+	val := c.Get("example") // example of retrieving a value set by middleware
+	slog.Info("example value from context", "value", val)
 	return c.JSON(h.service.Get(c))
 }
 
