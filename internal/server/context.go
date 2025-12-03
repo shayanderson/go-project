@@ -114,15 +114,15 @@ func (c *Context) Set(key, value any) {
 
 // Status sets the HTTP status code for the response
 func (c *Context) Status(code int) {
-	if c.wroteStatus.Load() {
-		slog.Warn(
-			"status code already written, ignoring additional status code",
-			slog.Int("code", code),
-		)
+	if c.wroteStatus.CompareAndSwap(false, true) {
+		c.writer.WriteHeader(code)
 		return
 	}
-	c.writer.WriteHeader(code)
-	c.wroteStatus.Store(true)
+
+	slog.Warn(
+		"status code already written, ignoring additional status code",
+		slog.Int("code", code),
+	)
 }
 
 // Writer returns the underlying http.ResponseWriter
