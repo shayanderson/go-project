@@ -1,3 +1,3 @@
 module github.com/shayanderson/go-project/v2
 
-go 1.25.3
+go 1.25.5

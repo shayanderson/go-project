@@ -1,6 +1,7 @@
 package server
 
 import (
+	"errors"
 	"fmt"
 )
 
@@ -31,17 +32,28 @@ func (s statusError) Unwrap() error {
 	return s.err
 }
 
-// Error creates a new status error with a message and status code
-func Error(status int, format string, a ...any) statusError {
-	return statusError{
+// Error creates a new status error with a text message and status code
+func Error(status int, text string) StatusError {
+	return &statusError{
+		err:    errors.New(text),
+		status: status,
+	}
+}
+
+// Errorf creates a new formatted status error with a status code
+func Errorf(status int, format string, a ...any) StatusError {
+	return &statusError{
 		err:    fmt.Errorf(format, a...),
 		status: status,
 	}
 }
 
-// NewError creates a new status error with an existing status code and error
-func NewError(status int, err error) statusError {
-	return statusError{
+// ErrorWrap wraps an existing error with a status code
+func ErrorWrap(status int, err error) StatusError {
+	if err == nil {
+		return nil
+	}
+	return &statusError{
 		err:    err,
 		status: status,
 	}
