@@ -1,12 +1,14 @@
 package server
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
 	"io"
-	"log/slog"
+	"net"
 	"net/http"
+	"strings"
 	"sync/atomic"
 )
 
@@ -15,31 +17,76 @@ import (
 // set to 0 to disable limit
 var LimitReadSize int64 = 10 * 1024 * 1024 // 10 MB
 
+// responseWriter is a wrapper around http.ResponseWriter that tracks if the header has been written
+type responseWriter struct {
+	http.ResponseWriter
+	headerWritten *atomic.Bool
+}
+
+// Flush implements the http.Flusher interface
+func (w *responseWriter) Flush() {
+	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+// Hijack implements the http.Hijacker interface
+func (w *responseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	h, ok := w.ResponseWriter.(http.Hijacker)
+	if !ok {
+		return nil, nil, errors.New("hijacker not supported")
+	}
+	return h.Hijack()
+}
+
+// Push implements the http.Pusher interface
+func (w *responseWriter) Push(target string, opts *http.PushOptions) error {
+	if p, ok := w.ResponseWriter.(http.Pusher); ok {
+		return p.Push(target, opts)
+	}
+	return http.ErrNotSupported
+}
+
+// Write writes the given bytes to the response
+func (w *responseWriter) Write(b []byte) (int, error) {
+	if w.headerWritten.CompareAndSwap(false, true) {
+		w.ResponseWriter.WriteHeader(http.StatusOK)
+	}
+	return w.ResponseWriter.Write(b)
+}
+
+// WriteHeader writes the HTTP status code to the response
+func (w *responseWriter) WriteHeader(status int) {
+	if w.headerWritten.CompareAndSwap(false, true) {
+		w.ResponseWriter.WriteHeader(status)
+		return
+	}
+	// ignore duplicate header writes
+}
+
 // Context represents the context of an HTTP request
 type Context struct {
-	ctx         context.Context
-	isMW        bool
-	request     *http.Request
-	writer      http.ResponseWriter
-	wroteStatus atomic.Bool
+	ctx     context.Context
+	isMW    bool
+	request *http.Request
+	writer  http.ResponseWriter
 }
 
 // NewContext creates a new Context
 func NewContext(w http.ResponseWriter, r *http.Request) *Context {
+	written := &atomic.Bool{}
 	return &Context{
 		ctx:     r.Context(),
 		request: r,
-		writer:  w,
+		writer:  &responseWriter{ResponseWriter: w, headerWritten: written},
 	}
 }
 
 // Bind binds the request body as JSON to the given struct
 func (c *Context) Bind(v any) error {
-	if c.request.Header.Get("Content-Type") != "application/json" {
-		return statusError{
-			err:    errors.New("invalid content type, expected application/json"),
-			status: http.StatusBadRequest,
-		}
+	ct := c.request.Header.Get("Content-Type")
+	if !strings.HasPrefix(ct, "application/json") {
+		return Error(http.StatusBadRequest, "invalid content type, expected application/json")
 	}
 	var dec *json.Decoder
 	if LimitReadSize > 0 {
@@ -114,15 +161,7 @@ func (c *Context) Set(key, value any) {
 
 // Status sets the HTTP status code for the response
 func (c *Context) Status(code int) {
-	if c.wroteStatus.CompareAndSwap(false, true) {
-		c.writer.WriteHeader(code)
-		return
-	}
-
-	slog.Warn(
-		"status code already written, ignoring additional status code",
-		slog.Int("code", code),
-	)
+	c.writer.WriteHeader(code)
 }
 
 // Writer returns the underlying http.ResponseWriter
