@@ -32,16 +32,21 @@ func fail(msg string, msgAndArgs ...any) {
 	var b strings.Builder
 	b.WriteString("assertion failed: " + msg + formatMsg(msgAndArgs...) + "\n\nstack trace:\n")
 
-	// skip first 3 frames: runtime.Callers, fail, and the assert func
-	for i := 3; ; i++ {
+	// skip first n frames until out of assert package
+	for i := 1; ; i++ {
 		pc, file, line, ok := runtime.Caller(i)
 		if !ok {
 			break
 		}
-		fn := runtime.FuncForPC(pc)
-		fmt.Fprintf(&b, "%s:%d - %s\n", file, line, fn.Name())
-	}
 
+		fn := runtime.FuncForPC(pc)
+		name := fn.Name()
+
+		if strings.Contains(name, "/assert.") || strings.Contains(name, "runtime.") {
+			continue
+		}
+		fmt.Fprintf(&b, "at %s:%d\n", file, line)
+	}
 	panic(b.String())
 }
 
