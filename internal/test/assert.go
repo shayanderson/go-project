@@ -42,13 +42,21 @@ func fail(t TestingT, msg string, msgAndArgs ...any) {
 	var b strings.Builder
 	b.WriteString("assertion failed: " + msg + formatMsg(msgAndArgs...) + "\n\nstack trace:\n")
 
-	// skip first 3 frames: runtime.Callers, fail, and the assert func
-	for i := 3; ; i++ {
+	// skip first n frames until out of test package
+	for i := 1; ; i++ {
 		pc, file, line, ok := runtime.Caller(i)
 		if !ok {
 			break
 		}
+
 		fn := runtime.FuncForPC(pc)
+		name := fn.Name()
+
+		if strings.Contains(name, "/test.") ||
+			strings.Contains(name, "runtime.") ||
+			strings.Contains(name, "testing.") {
+			continue
+		}
 		fmt.Fprintf(&b, "%s:%d - %s\n", file, line, fn.Name())
 	}
 
