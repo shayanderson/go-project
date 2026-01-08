@@ -22,7 +22,7 @@ func (h Handler) Serve(c *Context) {
 		// log request when not in middleware
 		slog.Info(
 			fmt.Sprintf(
-				"[http] %s http://%s%s %s from %s",
+				"http: %s http://%s%s %s from %s",
 				req.Method,
 				req.Host,
 				req.RequestURI,
@@ -44,7 +44,7 @@ func (h Handler) Serve(c *Context) {
 		}
 		// log error
 		slog.Error(fmt.Sprintf(
-			"[http] %s http://%s%s %s from %s (%d)",
+			"http: %s http://%s%s %s from %s (%d)",
 			req.Method,
 			req.Host,
 			req.RequestURI,
@@ -59,7 +59,7 @@ func (h Handler) Serve(c *Context) {
 		}
 		c.Status(status)
 		if err := c.JSON(map[string]string{"error": err.Error()}); err != nil {
-			panic("[http] failed to write error response: " + err.Error())
+			panic("http server failed to write error response: " + err.Error())
 		}
 	}
 }
@@ -157,7 +157,7 @@ func (s *Server) Start() error {
 		h.Serve(c)
 	})
 
-	slog.Info("[http] starting server", slog.String("addr", s.options.Addr))
+	slog.Info("http server starting", slog.String("addr", s.options.Addr))
 	var err error
 	if s.options.CertFile != "" && s.options.CertKeyFile != "" {
 		err = s.server.ListenAndServeTLS(s.options.CertFile, s.options.CertKeyFile)
@@ -172,7 +172,7 @@ func (s *Server) Start() error {
 
 // Stop stops the HTTP server
 func (s *Server) Stop() error {
-	slog.Info("[http] stopping server")
+	slog.Info("http server stopping")
 	s.stopping.Store(true)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
