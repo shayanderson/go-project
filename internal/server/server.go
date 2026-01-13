@@ -104,25 +104,36 @@ type Options struct {
 
 // Server is a simple HTTP server with middleware support
 type Server struct {
-	options    Options
 	middleware []Middleware
 	mux        *http.ServeMux
+	opts       Options
 	server     *http.Server
 	stopping   atomic.Bool
 }
 
 // New creates a new server instance
-func New(options Options) *Server {
+func New(opts Options) *Server {
+	if opts.ReadHeaderTimeout == 0 {
+		opts.ReadHeaderTimeout = 3 * time.Second
+	}
+	if opts.ReadTimeout == 0 {
+		opts.ReadTimeout = 5 * time.Second
+	}
+	if opts.WriteTimeout == 0 {
+		opts.WriteTimeout = 5 * time.Second
+	}
+
 	s := &Server{
-		options: options,
-		mux:     http.NewServeMux(),
+		opts: opts,
+		mux:  http.NewServeMux(),
 	}
 	s.server = &http.Server{
-		Addr:         options.Addr,
-		Handler:      s.mux,
-		IdleTimeout:  options.IdleTimeout,
-		ReadTimeout:  options.ReadTimeout,
-		WriteTimeout: options.WriteTimeout,
+		Addr:              opts.Addr,
+		Handler:           s.mux,
+		IdleTimeout:       opts.IdleTimeout,
+		ReadHeaderTimeout: opts.ReadHeaderTimeout,
+		ReadTimeout:       opts.ReadTimeout,
+		WriteTimeout:      opts.WriteTimeout,
 	}
 	return s
 }
@@ -157,10 +168,10 @@ func (s *Server) Start() error {
 		h.Serve(c)
 	})
 
-	slog.Info("http server starting", slog.String("addr", s.options.Addr))
+	slog.Info("http server starting", slog.String("addr", s.opts.Addr))
 	var err error
-	if s.options.CertFile != "" && s.options.CertKeyFile != "" {
-		err = s.server.ListenAndServeTLS(s.options.CertFile, s.options.CertKeyFile)
+	if s.opts.CertFile != "" && s.opts.CertKeyFile != "" {
+		err = s.server.ListenAndServeTLS(s.opts.CertFile, s.opts.CertKeyFile)
 	} else {
 		err = s.server.ListenAndServe()
 	}

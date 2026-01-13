@@ -13,9 +13,9 @@ import (
 )
 
 // LimitReadSize is the maximum size of a request body that will be read
-// defaults to 10 MB
+// defaults to 5 MB
 // set to 0 to disable limit
-var LimitReadSize int64 = 10 * 1024 * 1024 // 10 MB
+var LimitReadSize int64 = 5 * 1024 * 1024 // 5 MB
 
 // responseWriter is a wrapper around http.ResponseWriter that tracks if the header has been written
 type responseWriter struct {
