@@ -62,8 +62,13 @@ func (q *queue[T]) close() bool {
 }
 
 // Push adds a job to the queue
-func (q *queue[T]) Push(job T) {
-	q.queue <- job
+func (q *queue[T]) Push(job T) bool {
+	select {
+	case q.queue <- job:
+		return true
+	default:
+		return false
+	}
 }
 
 // Queue represents a work queue that processes jobs using a worker function

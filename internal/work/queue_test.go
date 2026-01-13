@@ -5,6 +5,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/shayanderson/go-project/v2/internal/test"
 )
 
 func TestQueue(t *testing.T) {
@@ -21,8 +23,10 @@ func TestQueue(t *testing.T) {
 		errCh <- q.Run(ctx)
 	}()
 
-	q.Push(1)
-	q.Push(2)
+	pushed := q.Push(1)
+	test.True(t, pushed)
+	pushed = q.Push(2)
+	test.True(t, pushed)
 
 	for processed.Load() < 2 {
 		time.Sleep(5 * time.Millisecond)
