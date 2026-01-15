@@ -62,6 +62,7 @@ func (q *queue[T]) close() bool {
 }
 
 // Push adds a job to the queue
+// returns false if the queue is full and the job was not added
 func (q *queue[T]) Push(job T) bool {
 	select {
 	case q.queue <- job:

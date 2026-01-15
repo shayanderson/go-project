@@ -160,8 +160,9 @@ func (c *Context) Set(key, value any) {
 }
 
 // Status sets the HTTP status code for the response
-func (c *Context) Status(code int) {
+func (c *Context) Status(code int) *Context {
 	c.writer.WriteHeader(code)
+	return c
 }
 
 // Writer returns the underlying http.ResponseWriter
