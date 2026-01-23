@@ -66,7 +66,7 @@ func (h Handler) Serve(c *Context) {
 
 // ServeHTTP serves an HTTP request
 func (r Handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	c := newContext(w, req)
+	c := NewContext(w, req)
 	defer c.request.Body.Close()
 
 	r.Serve(c)
@@ -163,7 +163,7 @@ func (s *Server) Start() error {
 
 	// wrap base handler
 	s.server.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		c := newContext(w, r)
+		c := NewContext(w, r)
 		c.middleware()
 		h.Serve(c)
 	})

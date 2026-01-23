@@ -72,8 +72,8 @@ type Context struct {
 	writer  http.ResponseWriter
 }
 
-// newContext creates a new Context
-func newContext(w http.ResponseWriter, r *http.Request) *Context {
+// NewContext creates a new Context
+func NewContext(w http.ResponseWriter, r *http.Request) *Context {
 	written := &atomic.Bool{}
 	return &Context{
 		ctx:     r.Context(),
