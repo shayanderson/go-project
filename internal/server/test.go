@@ -20,8 +20,8 @@ func NewTestServer() *TestServer {
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// apply middleware
-		h := Handler(func(c *Context) error {
-			s.mux.ServeHTTP(c.Writer(), c.Request())
+		h := HandlerFunc(func(c *Context) error {
+			s.mux.ServeHTTP(c.Writer(), c.Request)
 			return nil
 		})
 		for i := len(s.middleware) - 1; i >= 0; i-- {
@@ -43,7 +43,7 @@ func (t *TestServer) Client() *http.Client {
 }
 
 // Handle registers a new route with a handler
-func (t *TestServer) Handle(pattern string, handler Handler, middleware ...Middleware) {
+func (t *TestServer) Handle(pattern string, handler HandlerFunc, middleware ...Middleware) {
 	t.server.Handle(pattern, handler, middleware...)
 }
 

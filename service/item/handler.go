@@ -22,10 +22,18 @@ func NewHandler(service *Service) *Handler {
 func (h *Handler) Get(c *server.Context) error {
 	val := c.Get("example") // example of retrieving a value set by middleware
 	slog.Info("example value from context", "value", val)
-	return c.JSON(h.service.Get(c))
+	r, err := h.service.Get(c)
+	if err != nil {
+		return err
+	}
+	return c.JSON(r)
 }
 
 // Post handles POST /items
 func (h *Handler) Post(c *server.Context) error {
-	return c.JSON(h.service.Create(c))
+	r, err := h.service.Create(c)
+	if err != nil {
+		return err
+	}
+	return c.JSON(r)
 }

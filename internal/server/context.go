@@ -20,7 +20,7 @@ var LimitReadSize int64 = 5 * 1024 * 1024 // 5 MB
 // responseWriter is a wrapper around http.ResponseWriter that tracks if the header has been written
 type responseWriter struct {
 	http.ResponseWriter
-	headerWritten *atomic.Bool
+	headerWritten atomic.Bool
 }
 
 // Flush implements the http.Flusher interface
@@ -68,31 +68,30 @@ func (w *responseWriter) WriteHeader(status int) {
 type Context struct {
 	ctx     context.Context
 	isMW    bool
-	request *http.Request
+	Request *http.Request
 	writer  http.ResponseWriter
 }
 
 // NewContext creates a new Context
 func NewContext(w http.ResponseWriter, r *http.Request) *Context {
-	written := &atomic.Bool{}
 	return &Context{
 		ctx:     r.Context(),
-		request: r,
-		writer:  &responseWriter{ResponseWriter: w, headerWritten: written},
+		Request: r,
+		writer:  &responseWriter{ResponseWriter: w},
 	}
 }
 
 // Bind binds the request body as JSON to the given struct
 func (c *Context) Bind(v any) error {
-	ct := c.request.Header.Get("Content-Type")
+	ct := c.Request.Header.Get("Content-Type")
 	if !strings.HasPrefix(ct, "application/json") {
 		return Error(http.StatusBadRequest, "invalid content type, expected application/json")
 	}
 	var dec *json.Decoder
 	if LimitReadSize > 0 {
-		dec = json.NewDecoder(io.LimitReader(c.request.Body, LimitReadSize))
+		dec = json.NewDecoder(io.LimitReader(c.Request.Body, LimitReadSize))
 	} else {
-		dec = json.NewDecoder(c.request.Body)
+		dec = json.NewDecoder(c.Request.Body)
 	}
 	return dec.Decode(v)
 }
@@ -112,19 +111,29 @@ func (c *Context) isMiddleware() bool {
 	return c.isMW
 }
 
+// HTML writes an HTML response
+// if a status code is provided, it writes that status code, otherwise defaults to 200
+func (c *Context) HTML(s string, code ...int) error {
+	w := c.Writer()
+	if len(code) > 0 {
+		c.Status(code[0])
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, err := io.WriteString(w, s)
+	return err
+}
+
 // JSON writes the given value as JSON to the response
-// if an error is provided, it returns that error instead
+// if a status code is provided, it writes that status code, otherwise defaults to 200
 // URL query parameter "pretty" can be used to pretty-print the JSON
-func (c *Context) JSON(v any, err ...error) error {
+func (c *Context) JSON(v any, code ...int) error {
 	w := c.Writer()
 	w.Header().Set("Content-Type", "application/json")
-
-	if len(err) > 0 && err[0] != nil {
-		return err[0] // return the error instead
+	if len(code) > 0 {
+		c.Status(code[0])
 	}
-
 	enc := json.NewEncoder(w)
-	if pretty := c.request.URL.Query().Has("pretty"); pretty {
+	if pretty := c.Request.URL.Query().Has("pretty"); pretty {
 		enc.SetIndent("", "  ")
 	}
 	return enc.Encode(v)
@@ -138,7 +147,7 @@ func (c *Context) middleware() {
 // Param retrieves a path parameter by key
 // returns an error if the parameter is not found
 func (c *Context) Param(key string) (string, error) {
-	v := c.request.PathValue(key)
+	v := c.Request.PathValue(key)
 	if v == "" {
 		return "", statusError{
 			err:    errors.New("required param not found: " + key),
@@ -148,21 +157,37 @@ func (c *Context) Param(key string) (string, error) {
 	return v, nil
 }
 
-// Request returns the underlying http.Request
-func (c *Context) Request() *http.Request {
-	return c.request
+// Redirect redirects the request to the given URL with the given status code
+// if no status code is provided, it defaults to 303 See Other
+func (c *Context) Redirect(url string, code ...int) {
+	status := http.StatusSeeOther
+	if len(code) > 0 {
+		status = code[0]
+	}
+	http.Redirect(c.Writer(), c.Request, url, status)
 }
 
 // Set sets a value in the context by key
 func (c *Context) Set(key, value any) {
 	c.ctx = context.WithValue(c.ctx, key, value)
-	c.request = c.request.WithContext(c.ctx)
+	c.Request = c.Request.WithContext(c.ctx)
 }
 
-// Status sets the HTTP status code for the response
-func (c *Context) Status(code int) *Context {
+// Status writes the HTTP status code in the response
+func (c *Context) Status(code int) {
 	c.writer.WriteHeader(code)
-	return c
+}
+
+// String writes a plain text response
+// if a status code is provided, it writes that status code, otherwise defaults to 200
+func (c *Context) String(s string, code ...int) error {
+	w := c.Writer()
+	if len(code) > 0 {
+		c.Status(code[0])
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	_, err := io.WriteString(w, s)
+	return err
 }
 
 // Writer returns the underlying http.ResponseWriter

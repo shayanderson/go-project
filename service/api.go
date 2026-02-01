@@ -14,7 +14,7 @@ type Infra struct {
 
 // Server defines the interface for the server used by the API
 type Server interface {
-	Handle(string, server.Handler, ...server.Middleware)
+	Handle(string, server.HandlerFunc, ...server.Middleware)
 	Start() error
 	Stop() error
 	Use(...server.Middleware)
