@@ -148,6 +148,16 @@ func New(opts Options) *Server {
 	return s
 }
 
+// Delete registers a new DELETE route with a handler
+func (s *Server) Delete(pattern string, handler HandlerFunc, middleware ...Middleware) {
+	s.Handle(http.MethodDelete+" "+pattern, handler, middleware...)
+}
+
+// Get registers a new GET route with a handler
+func (s *Server) Get(pattern string, handler HandlerFunc, middleware ...Middleware) {
+	s.Handle(http.MethodGet+" "+pattern, handler, middleware...)
+}
+
 // Handle registers a new route with a handler
 func (s *Server) Handle(pattern string, handler HandlerFunc, middleware ...Middleware) {
 	s.mux.Handle(pattern, chain(handler, middleware...))
@@ -156,6 +166,21 @@ func (s *Server) Handle(pattern string, handler HandlerFunc, middleware ...Middl
 // Mux returns the underlying http.ServeMux
 func (s *Server) Mux() *http.ServeMux {
 	return s.mux
+}
+
+// Patch registers a new PATCH route with a handler
+func (s *Server) Patch(pattern string, handler HandlerFunc, middleware ...Middleware) {
+	s.Handle(http.MethodPatch+" "+pattern, handler, middleware...)
+}
+
+// Post registers a new POST route with a handler
+func (s *Server) Post(pattern string, handler HandlerFunc, middleware ...Middleware) {
+	s.Handle(http.MethodPost+" "+pattern, handler, middleware...)
+}
+
+// Put registers a new PUT route with a handler
+func (s *Server) Put(pattern string, handler HandlerFunc, middleware ...Middleware) {
+	s.Handle(http.MethodPut+" "+pattern, handler, middleware...)
 }
 
 // Start starts the HTTP server

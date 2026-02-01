@@ -144,19 +144,6 @@ func (c *Context) middleware() {
 	c.isMW = true
 }
 
-// Param retrieves a path parameter by key
-// returns an error if the parameter is not found
-func (c *Context) Param(key string) (string, error) {
-	v := c.Request.PathValue(key)
-	if v == "" {
-		return "", statusError{
-			err:    errors.New("required param not found: " + key),
-			status: http.StatusBadRequest,
-		}
-	}
-	return v, nil
-}
-
 // Redirect redirects the request to the given URL with the given status code
 // if no status code is provided, it defaults to 303 See Other
 func (c *Context) Redirect(url string, code ...int) {
