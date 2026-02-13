@@ -25,7 +25,7 @@ type HandlerFunc func(*Context) error
 func (h HandlerFunc) Serve(c *Context) {
 	if !c.isMiddleware() {
 		// log request when not in middleware
-		slog.Info(
+		slog.Info( // #nosec G706
 			fmt.Sprintf(
 				"http: %s http://%s%s %s from %s",
 				c.Request.Method,
@@ -48,7 +48,7 @@ func (h HandlerFunc) Serve(c *Context) {
 			}
 		}
 		// log error
-		slog.Error(fmt.Sprintf(
+		slog.Error(fmt.Sprintf( // #nosec G706
 			"http: %s http://%s%s %s from %s (%d)",
 			c.Request.Method,
 			c.Request.Host,
