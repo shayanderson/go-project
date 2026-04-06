@@ -7,8 +7,6 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"github.com/shayanderson/go-project/v2/internal/test"
 )
 
 func TestRunner(t *testing.T) {
@@ -69,25 +67,33 @@ func TestRunnerError(t *testing.T) {
 func TestThrottler_Allow_FirstCallAllowed(t *testing.T) {
 	t.Parallel()
 	th := NewThrottler(100 * time.Millisecond)
-
-	test.True(t, th.Allow())
+	if !th.Allow() {
+		t.Fatal("expected first call to Allow() to return true")
+	}
 }
 
 func TestThrottler_Allow_ThrottledWithinInterval(t *testing.T) {
 	t.Parallel()
 	th := NewThrottler(200 * time.Millisecond)
-
-	test.True(t, th.Allow())
-	test.False(t, th.Allow())
+	if !th.Allow() {
+		t.Fatal("expected first call to Allow() to return true")
+	}
+	if th.Allow() {
+		t.Fatal("expected second call to Allow() within interval to return false")
+	}
 }
 
 func TestThrottler_Allow_AfterInterval(t *testing.T) {
 	t.Parallel()
 	th := NewThrottler(5 * time.Millisecond)
 
-	test.True(t, th.Allow())
+	if !th.Allow() {
+		t.Fatal("expected first call to Allow() to return true")
+	}
 	time.Sleep(10 * time.Millisecond)
-	test.True(t, th.Allow())
+	if !th.Allow() {
+		t.Fatal("expected call to Allow() after interval to return true")
+	}
 }
 
 func TestThrottler_Do(t *testing.T) {
@@ -96,22 +102,34 @@ func TestThrottler_Do(t *testing.T) {
 
 	var c atomic.Int32
 
-	test.True(t, th.Do(func() {
+	if !th.Do(func() {
 		c.Add(1)
-	}))
-	test.Equal(t, 1, c.Load())
+	}) {
+		t.Fatal("expected first call to Do() to return true")
+	}
+	if c.Load() != 1 {
+		t.Fatalf("expected c to be 1, got %d", c.Load())
+	}
 
-	test.False(t, th.Do(func() {
+	if th.Do(func() {
 		c.Add(1)
-	}))
-	test.Equal(t, 1, c.Load())
+	}) {
+		t.Fatal("expected second call to Do() to return false")
+	}
+	if c.Load() != 1 {
+		t.Fatalf("expected c to still be 1, got %d", c.Load())
+	}
 
 	time.Sleep(10 * time.Millisecond)
 
-	test.True(t, th.Do(func() {
+	if !th.Do(func() {
 		c.Add(1)
-	}))
-	test.Equal(t, 2, c.Load())
+	}) {
+		t.Fatal("expected call to Do() after interval to return true")
+	}
+	if c.Load() != 2 {
+		t.Fatalf("expected c to be 2, got %d", c.Load())
+	}
 }
 
 func TestThrottler_ConcurrentAllow(t *testing.T) {
@@ -134,7 +152,9 @@ func TestThrottler_ConcurrentAllow(t *testing.T) {
 	}
 	wg.Wait()
 
-	test.Equal(t, 1, allowed.Load())
+	if allowed.Load() != 1 {
+		t.Fatalf("expected exactly 1 allowed call, got %d", allowed.Load())
+	}
 }
 
 func TestThrottler_RaceSafety(t *testing.T) {
