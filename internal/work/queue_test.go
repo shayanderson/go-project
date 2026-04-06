@@ -6,8 +6,6 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"github.com/shayanderson/go-project/v2/internal/test"
 )
 
 func TestQueue(t *testing.T) {
@@ -25,9 +23,13 @@ func TestQueue(t *testing.T) {
 	}()
 
 	pushed := q.Push(1)
-	test.True(t, pushed)
+	if !pushed {
+		t.Fatal("expected to push job 1, but queue is full")
+	}
 	pushed = q.Push(2)
-	test.True(t, pushed)
+	if !pushed {
+		t.Fatal("expected to push job 2, but queue is full")
+	}
 
 	for processed.Load() < 2 {
 		time.Sleep(5 * time.Millisecond)
@@ -72,9 +74,13 @@ func TestErrQueue(t *testing.T) {
 	}()
 
 	pushed := q.Push(1)
-	test.True(t, pushed)
+	if !pushed {
+		t.Fatal("expected to push job 1, but queue is full")
+	}
 	pushed = q.Push(2)
-	test.True(t, pushed)
+	if !pushed {
+		t.Fatal("expected to push job 2, but queue is full")
+	}
 
 	for processed.Load() < 2 {
 		time.Sleep(5 * time.Millisecond)
