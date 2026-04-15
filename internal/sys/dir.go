@@ -1,4 +1,4 @@
-package dir
+package sys
 
 import (
 	"os"
@@ -10,8 +10,8 @@ type Dir struct {
 	path string
 }
 
-// New creates a new Dir instance with the given path
-func New(path string) *Dir {
+// NewDir creates a new Dir instance with the given path
+func NewDir(path string) *Dir {
 	return &Dir{path: path}
 }
 

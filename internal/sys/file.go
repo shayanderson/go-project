@@ -1,4 +1,4 @@
-package file
+package sys
 
 import (
 	"fmt"
@@ -12,8 +12,8 @@ type File struct {
 	path string
 }
 
-// New creates a new File instance with the given path
-func New(path string) *File {
+// NewFile creates a new File instance with the given path
+func NewFile(path string) *File {
 	return &File{path: path}
 }
 
