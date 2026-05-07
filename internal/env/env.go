@@ -3,6 +3,7 @@ package env
 import (
 	"os"
 	"strconv"
+	"strings"
 )
 
 // Bool retrieves the boolean value of the environment variable by key
@@ -61,6 +62,16 @@ func MustString(key string) string {
 	return v
 }
 
+// MustStrings retrieves a slice of strings from the environment variable by key, split by comma
+// panics if the variable is missing or empty
+func MustStrings(key string) []string {
+	v, ok := os.LookupEnv(key)
+	if !ok || v == "" {
+		panic("required env var missing or empty: " + key)
+	}
+	return splitAndTrim(v, ",")
+}
+
 // parseBool parses a string into a boolean value
 func parseBool(v string) bool {
 	switch v {
@@ -77,4 +88,25 @@ func String(key, fallback string) string {
 		return fallback
 	}
 	return v
+}
+
+// Strings retrieves a slice of strings from the environment variable by key, split by comma
+func Strings(key string, fallback []string) []string {
+	v, ok := os.LookupEnv(key)
+	if !ok {
+		return fallback
+	}
+	return splitAndTrim(v, ",")
+}
+
+// splitAndTrim splits a string by the given separator and trims whitespace from each element
+func splitAndTrim(s, sep string) []string {
+	parts := make([]string, 0)
+	for v := range strings.SplitSeq(s, sep) {
+		v = strings.TrimSpace(v)
+		if v != "" {
+			parts = append(parts, v)
+		}
+	}
+	return parts
 }
