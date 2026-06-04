@@ -5,65 +5,54 @@ import (
 	"errors"
 	"runtime"
 	"sync"
-	"sync/atomic"
 )
 
 // Job represents a unit of work to be processed by a queue worker
 type Job any
 
 // Worker is a function that processes a job
-type Worker[T Job] func(context.Context, T)
+type Worker[T Job] func(context.Context, T) error
 
-// Options represents the configuration options for a Queue
-type Options struct {
-	// Size is the size of the job queue buffer
-	// defaults to Workers * 4
-	Size int
-	// Workers is the number of concurrent workers to process jobs
-	// defaults to number of CPU cores
-	Workers int
+// JobQueue is a queue that processes jobs using a worker function
+type JobQueue[T Job] struct {
+	queue   chan T
+	worker  Worker[T]
+	workers int
 }
 
-// queue is the internal queue
-type queue[T Job] struct {
-	closed   atomic.Bool
-	nWorkers int
-	queue    chan T
-	sem      chan struct{}
+// Queue is an interface for pushing jobs to a queue
+type Queue[T Job] interface {
+	// Push adds a job to the queue, returning false if the queue is full
+	Push(T) bool
 }
 
-// newQueue creates a new internal queue with the given options
-func newQueue[T Job](options ...Options) *queue[T] {
-	var opts Options
-	if len(options) > 0 {
-		opts = options[0]
+// NewQueue creates a new JobQueue with the specified number of workers,
+// queue buffer size and worker function
+// if workers is 0 or negative, it defaults to the number of CPU cores
+// if size is 0 or negative, it defaults to workers * 4
+func NewQueue[T Job](workers int, size int, worker Worker[T]) *JobQueue[T] {
+	if workers <= 0 {
+		workers = runtime.NumCPU()
 	}
-	if opts.Workers <= 0 {
-		opts.Workers = runtime.NumCPU()
+	if size <= 0 {
+		size = workers * 4
 	}
-	if opts.Size <= 0 {
-		opts.Size = opts.Workers * 4
-	}
-	return &queue[T]{
-		nWorkers: opts.Workers,
-		queue:    make(chan T, opts.Size),
-		sem:      make(chan struct{}, opts.Workers),
+	return &JobQueue[T]{
+		workers: workers,
+		queue:   make(chan T, size),
+		worker:  worker,
 	}
 }
 
-// close closes the internal queue channels
-func (q *queue[T]) close() bool {
-	if q.closed.CompareAndSwap(false, true) {
-		close(q.queue)
-		close(q.sem)
-		return true
-	}
-	return false
+// Close closes the job queue, preventing any new jobs from being added
+// after calling Close, the queue will panic if Push is called
+func (q *JobQueue[T]) Close() {
+	close(q.queue)
 }
 
 // Push adds a job to the queue
-// returns false if the queue is full and the job was not added
-func (q *queue[T]) Push(job T) bool {
+// returns false if the queue is full and the job cannot be added
+func (q *JobQueue[T]) Push(job T) bool {
 	select {
 	case q.queue <- job:
 		return true
@@ -72,141 +61,66 @@ func (q *queue[T]) Push(job T) bool {
 	}
 }
 
-// Queue represents a work queue that processes jobs using a worker function
-type Queue[T Job] struct {
-	*queue[T]
-	worker Worker[T]
-}
-
-// NewQueue creates a new Queue with the given worker and options
-func NewQueue[T Job](worker Worker[T], options ...Options) *Queue[T] {
-	return &Queue[T]{
-		queue:  newQueue[T](options...),
-		worker: worker,
-	}
-}
-
-// Run starts the queue and begins processing jobs
-// runs until the context is cancelled
-func (q *Queue[T]) Run(ctx context.Context) error {
-	if q.closed.Load() {
-		return errors.New("queue is closed")
-	}
+// Run starts processing jobs from the queue using the worker function
+// it blocks until the context is canceled or an error occurs in a worker
+func (q *JobQueue[T]) Run(ctx context.Context) error {
 	if q.worker == nil {
 		return errors.New("worker must be provided")
 	}
 
-	wg := sync.WaitGroup{}
-	for range q.nWorkers {
-		wg.Go(func() {
-			q.runWorker(ctx)
-		})
-	}
-
-	<-ctx.Done()
-	wg.Wait() // wait for all workers to finish
-	q.close()
-	if err := ctx.Err(); err != nil && err != context.Canceled {
-		return err
-	}
-	return nil
-}
-
-// runWorker processes jobs from the queue until the context is cancelled
-func (q *Queue[T]) runWorker(ctx context.Context) {
-	for {
-		select {
-		case <-ctx.Done():
-			return
-
-		case job := <-q.queue.queue:
-			q.sem <- struct{}{} // acquire
-			func() {
-				defer func() { <-q.sem }() // release even on panic
-				// process job
-				q.worker(ctx, job)
-			}()
-		}
-	}
-}
-
-// ErrWorker is a function that processes a job and returns an error if one occurs
-type ErrWorker[T Job] func(context.Context, T) error
-
-// ErrQueue is a queue that processes jobs with error handling
-type ErrQueue[T Job] struct {
-	*queue[T]
-	errors chan error
-	worker ErrWorker[T]
-}
-
-// NewErrQueue creates a new ErrQueue with the given worker and options
-func NewErrQueue[T Job](worker ErrWorker[T], options ...Options) *ErrQueue[T] {
-	q := newQueue[T](options...)
-	return &ErrQueue[T]{
-		errors: make(chan error, cap(q.queue)),
-		queue:  q,
-		worker: worker,
-	}
-}
-
-// Run starts the ErrQueue and begins processing jobs using the worker function
-// runs until the context is cancelled or an error occurs
-func (q *ErrQueue[T]) Run(ctx context.Context) error {
-	if q.closed.Load() {
-		return errors.New("queue is closed")
-	}
-	if q.worker == nil {
-		return errors.New("worker must be provided")
-	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	wg := sync.WaitGroup{}
-	for range q.nWorkers {
+	errs := make(chan error, 1)
+
+	var wg sync.WaitGroup
+
+	for i := 0; i < q.workers; i++ {
 		wg.Go(func() {
-			q.runWorker(ctx)
+			for {
+				select {
+				case <-ctx.Done():
+					return
+
+				case job, ok := <-q.queue:
+					if !ok {
+						return // queue closed, exit worker
+					}
+
+					if err := q.worker(ctx, job); err != nil {
+						select {
+						case errs <- err: // emit error
+							cancel()
+						default:
+						}
+						return
+					}
+				}
+			}
 		})
 	}
 
-	var err error
+	done := make(chan struct{})
+
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
 	select {
+	case err := <-errs:
+		<-done
+		return err
+
+	case <-done:
+		return nil
+
 	case <-ctx.Done():
-	case err = <-q.errors:
-		// an error occurred, stop workers
-		cancel()
-	}
-	wg.Wait() // wait for all workers to finish
-	if q.close() {
-		close(q.errors)
-	}
+		<-done
 
-	if err != nil {
-		return err
-	}
-	if err := ctx.Err(); err != nil && err != context.Canceled {
-		return err
-	}
-	return nil
-}
-
-// runWorker processes jobs from the queue until the context is cancelled or an error occurs
-func (q *ErrQueue[T]) runWorker(ctx context.Context) {
-	for {
-		select {
-		case <-ctx.Done():
-			return
-
-		case job := <-q.queue.queue:
-			q.sem <- struct{}{} // acquire
-			func() {
-				defer func() { <-q.sem }() // release even on panic
-				// process job
-				if err := q.worker(ctx, job); err != nil {
-					q.errors <- err
-					return
-				}
-			}()
+		if err := ctx.Err(); err != nil && !errors.Is(err, context.Canceled) {
+			return err
 		}
+		return nil
 	}
 }

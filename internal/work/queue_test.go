@@ -3,147 +3,212 @@ package work
 import (
 	"context"
 	"errors"
+	"runtime"
 	"sync/atomic"
 	"testing"
 	"time"
 )
 
 func TestQueue(t *testing.T) {
+	t.Parallel()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	var processed atomic.Int32
-	q := NewQueue(func(context.Context, int) {
-		processed.Add(1)
-	}, Options{Workers: 1, Size: 2})
+
+	q := NewQueue(
+		1,
+		2,
+		func(context.Context, int) error {
+			processed.Add(1)
+			return nil
+		},
+	)
 
 	errCh := make(chan error, 1)
+
 	go func() {
 		errCh <- q.Run(ctx)
 	}()
 
-	pushed := q.Push(1)
-	if !pushed {
-		t.Fatal("expected to push job 1, but queue is full")
+	if !q.Push(1) {
+		t.Fatal("expected push 1 to succeed")
 	}
-	pushed = q.Push(2)
-	if !pushed {
-		t.Fatal("expected to push job 2, but queue is full")
+
+	if !q.Push(2) {
+		t.Fatal("expected push 2 to succeed")
 	}
 
 	for processed.Load() < 2 {
-		time.Sleep(5 * time.Millisecond)
+		time.Sleep(time.Millisecond)
 	}
 
 	cancel()
 
 	if err := <-errCh; err != nil {
-		t.Fatalf("expected no error, got %v", err)
+		t.Fatalf("expected nil error, got %v", err)
 	}
+
 	if processed.Load() != 2 {
 		t.Fatalf("expected 2 processed jobs, got %d", processed.Load())
 	}
 }
 
-func TestQueueRunClosed(t *testing.T) {
-	q := NewQueue(func(context.Context, int) {})
-	q.close()
+func TestQueueDefaults(t *testing.T) {
+	t.Parallel()
+
+	q := NewQueue(0, 0, func(context.Context, int) error {
+		return nil
+	})
+
+	if q.workers != runtime.NumCPU() {
+		t.Fatalf("expected default workers to be %d, got %d", runtime.NumCPU(), q.workers)
+	}
+
+	if cap(q.queue) != runtime.NumCPU()*4 {
+		t.Fatalf("expected default queue size to be %d, got %d", runtime.NumCPU()*4, cap(q.queue))
+	}
+}
+
+func TestQueueFull(t *testing.T) {
+	t.Parallel()
+
+	q := NewQueue(
+		1,
+		1,
+		func(context.Context, int) error {
+			time.Sleep(time.Second)
+			return nil
+		},
+	)
+
+	if !q.Push(1) {
+		t.Fatal("expected first push to succeed")
+	}
+
+	if q.Push(2) {
+		t.Fatal("expected second push to fail")
+	}
+}
+
+func TestQueueWorkerError(t *testing.T) {
+	t.Parallel()
+
+	expected := errors.New("test error")
+
+	q := NewQueue(
+		1,
+		2,
+		func(context.Context, int) error {
+			return expected
+		},
+	)
+
+	if !q.Push(1) {
+		t.Fatal("expected push to succeed")
+	}
+
+	q.Close()
 
 	err := q.Run(t.Context())
+
 	if err == nil {
-		t.Fatal("expected error when running a closed queue")
+		t.Fatal("expected error")
 	}
-	if err.Error() != "queue is closed" {
+
+	if !errors.Is(err, expected) {
+		t.Fatalf("expected %v, got %v", expected, err)
+	}
+}
+
+func TestQueueNilWorker(t *testing.T) {
+	t.Parallel()
+
+	q := NewQueue[int](1, 1, nil)
+
+	err := q.Run(t.Context())
+
+	if err == nil {
+		t.Fatal("expected error")
+	}
+
+	if err.Error() != "worker must be provided" {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
-func TestErrQueue(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+func TestQueueClose(t *testing.T) {
+	t.Parallel()
 
-	var processed atomic.Int32
-	q := NewErrQueue(func(context.Context, int) error {
-		processed.Add(1)
-		return nil
-	}, Options{Workers: 1, Size: 2})
+	q := NewQueue(
+		1,
+		1,
+		func(context.Context, int) error {
+			return nil
+		},
+	)
+
+	q.Close()
+
+	err := q.Run(t.Context())
+
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+}
+
+func TestQueueContextCancel(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	q := NewQueue(
+		1,
+		1,
+		func(context.Context, int) error {
+			return nil
+		},
+	)
 
 	errCh := make(chan error, 1)
+
 	go func() {
 		errCh <- q.Run(ctx)
 	}()
-
-	pushed := q.Push(1)
-	if !pushed {
-		t.Fatal("expected to push job 1, but queue is full")
-	}
-	pushed = q.Push(2)
-	if !pushed {
-		t.Fatal("expected to push job 2, but queue is full")
-	}
-
-	for processed.Load() < 2 {
-		time.Sleep(5 * time.Millisecond)
-	}
 
 	cancel()
 
 	if err := <-errCh; err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-	if processed.Load() != 2 {
-		t.Fatalf("expected 2 processed jobs, got %d", processed.Load())
+		t.Fatalf("expected nil error, got %v", err)
 	}
 }
 
-func TestErrQueueError(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+func TestQueueDeadlineExceeded(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(
+		context.Background(),
+		time.Millisecond,
+	)
 	defer cancel()
 
-	var processed atomic.Int32
-	q := NewErrQueue(func(context.Context, int) error {
-		processed.Add(1)
-		if processed.Load() == 2 {
-			return errors.New("test error")
-		}
-		return nil
-	}, Options{Workers: 1, Size: 2})
+	q := NewQueue(
+		1,
+		1,
+		func(context.Context, int) error {
+			time.Sleep(50 * time.Millisecond)
+			return nil
+		},
+	)
 
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- q.Run(ctx)
-	}()
+	err := q.Run(ctx)
 
-	q.Push(1)
-	q.Push(2)
-
-	for processed.Load() < 2 {
-		time.Sleep(5 * time.Millisecond)
-	}
-
-	cancel()
-
-	err := <-errCh
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-	if err.Error() != "test error" {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if processed.Load() != 2 {
-		t.Fatalf("expected 2 processed jobs, got %d", processed.Load())
-	}
-}
-
-func TestErrQueueRunClosed(t *testing.T) {
-	q := NewErrQueue(func(context.Context, int) error { return nil })
-	q.close()
-
-	err := q.Run(t.Context())
-	if err == nil {
-		t.Fatal("expected error when running a closed queue")
-	}
-	if err.Error() != "queue is closed" {
-		t.Fatalf("unexpected error: %v", err)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf(
+			"expected %v, got %v",
+			context.DeadlineExceeded,
+			err,
+		)
 	}
 }
