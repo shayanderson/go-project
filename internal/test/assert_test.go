@@ -150,6 +150,88 @@ func TestPanics(t *testing.T) {
 	expectFail(t, func(f *fakeT) { Panics(f, func() {}) })
 }
 
+func TestSame(t *testing.T) {
+	t.Run("same_pointer", func(t *testing.T) {
+		v := &struct{ X int }{X: 1}
+
+		expectPass(t, func(f *fakeT) {
+			Same(f, v, v)
+		})
+	})
+
+	t.Run("different_pointers", func(t *testing.T) {
+		v1 := &struct{ X int }{X: 1}
+		v2 := &struct{ X int }{X: 1}
+
+		expectFail(t, func(f *fakeT) {
+			Same(f, v1, v2)
+		})
+	})
+
+	t.Run("same_slice", func(t *testing.T) {
+		s := []int{1, 2, 3}
+
+		expectPass(t, func(f *fakeT) {
+			Same(f, s, s)
+		})
+	})
+
+	t.Run("different_slices", func(t *testing.T) {
+		s1 := []int{1, 2, 3}
+		s2 := []int{1, 2, 3}
+
+		expectFail(t, func(f *fakeT) {
+			Same(f, s1, s2)
+		})
+	})
+
+	t.Run("same_map", func(t *testing.T) {
+		m := map[string]int{"a": 1}
+
+		expectPass(t, func(f *fakeT) {
+			Same(f, m, m)
+		})
+	})
+
+	t.Run("different_maps", func(t *testing.T) {
+		m1 := map[string]int{"a": 1}
+		m2 := map[string]int{"a": 1}
+
+		expectFail(t, func(f *fakeT) {
+			Same(f, m1, m2)
+		})
+	})
+
+	t.Run("nil_values", func(t *testing.T) {
+		expectPass(t, func(f *fakeT) {
+			Same(f, nil, nil)
+		})
+	})
+
+	t.Run("one_nil", func(t *testing.T) {
+		v := &struct{}{}
+
+		expectFail(t, func(f *fakeT) {
+			Same(f, v, nil)
+		})
+	})
+
+	t.Run("different_types", func(t *testing.T) {
+		v1 := &struct{}{}
+		v2 := &struct{ X int }{}
+
+		expectFail(t, func(f *fakeT) {
+			Same(f, v1, v2)
+		})
+	})
+
+	t.Run("unsupported_type", func(t *testing.T) {
+		expectFail(t, func(f *fakeT) {
+			Same(f, 1, 1)
+		})
+	})
+}
+
 func TestTrue(t *testing.T) {
 	expectPass(t, func(f *fakeT) { True(f, true) })
 	expectFail(t, func(f *fakeT) { True(f, false) })

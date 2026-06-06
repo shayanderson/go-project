@@ -270,6 +270,61 @@ func Panics(t TestingT, f func(), msgAndArgs ...any) {
 	f()
 }
 
+// Same asserts that expected and actual refer to the same object
+func Same(t TestingT, expected, actual any, msgAndArgs ...any) {
+	t.Helper()
+
+	if expected == nil || actual == nil {
+		if expected == actual {
+			return
+		}
+
+		fail(
+			t,
+			fmt.Sprintf("expected same object, got expected '%v', got '%v'", expected, actual),
+			msgAndArgs...,
+		)
+		return
+	}
+
+	ev := reflect.ValueOf(expected)
+	av := reflect.ValueOf(actual)
+
+	if ev.Type() != av.Type() {
+		fail(
+			t,
+			fmt.Sprintf("expected same type '%v', got '%v'", ev.Type(), av.Type()),
+			msgAndArgs...,
+		)
+		return
+	}
+
+	switch ev.Kind() {
+	case reflect.Pointer,
+		reflect.Map,
+		reflect.Slice,
+		reflect.Func,
+		reflect.Chan:
+
+		if ev.Pointer() != av.Pointer() {
+			fail(
+				t,
+				fmt.Sprintf(
+					"expected same object, got '%#x' and '%#x'", ev.Pointer(), av.Pointer(),
+				),
+				msgAndArgs...,
+			)
+		}
+
+	default:
+		fail(
+			t,
+			fmt.Sprintf("Same only supports pointer-like types, got '%T'", expected),
+			msgAndArgs...,
+		)
+	}
+}
+
 // True asserts that the given condition is true
 func True(t TestingT, condition bool, msgAndArgs ...any) {
 	t.Helper()
