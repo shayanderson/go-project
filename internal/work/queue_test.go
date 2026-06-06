@@ -16,7 +16,7 @@ func TestQueue(t *testing.T) {
 
 	var processed atomic.Int32
 
-	q := NewQueue(
+	q := NewJobQueue(
 		1,
 		2,
 		func(context.Context, int) error {
@@ -57,7 +57,7 @@ func TestQueue(t *testing.T) {
 func TestQueueDefaults(t *testing.T) {
 	t.Parallel()
 
-	q := NewQueue(0, 0, func(context.Context, int) error {
+	q := NewJobQueue(0, 0, func(context.Context, int) error {
 		return nil
 	})
 
@@ -73,7 +73,7 @@ func TestQueueDefaults(t *testing.T) {
 func TestQueueFull(t *testing.T) {
 	t.Parallel()
 
-	q := NewQueue(
+	q := NewJobQueue(
 		1,
 		1,
 		func(context.Context, int) error {
@@ -96,7 +96,7 @@ func TestQueueWorkerError(t *testing.T) {
 
 	expected := errors.New("test error")
 
-	q := NewQueue(
+	q := NewJobQueue(
 		1,
 		2,
 		func(context.Context, int) error {
@@ -124,7 +124,7 @@ func TestQueueWorkerError(t *testing.T) {
 func TestQueueNilWorker(t *testing.T) {
 	t.Parallel()
 
-	q := NewQueue[int](1, 1, nil)
+	q := NewJobQueue[int](1, 1, nil)
 
 	err := q.Run(t.Context())
 
@@ -140,7 +140,7 @@ func TestQueueNilWorker(t *testing.T) {
 func TestQueueClose(t *testing.T) {
 	t.Parallel()
 
-	q := NewQueue(
+	q := NewJobQueue(
 		1,
 		1,
 		func(context.Context, int) error {
@@ -162,7 +162,7 @@ func TestQueueContextCancel(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	q := NewQueue(
+	q := NewJobQueue(
 		1,
 		1,
 		func(context.Context, int) error {
@@ -192,7 +192,7 @@ func TestQueueDeadlineExceeded(t *testing.T) {
 	)
 	defer cancel()
 
-	q := NewQueue(
+	q := NewJobQueue(
 		1,
 		1,
 		func(context.Context, int) error {

@@ -25,11 +25,11 @@ type Queue[T Job] interface {
 	Push(T) bool
 }
 
-// NewQueue creates a new JobQueue with the specified number of workers,
+// NewJobQueue creates a new JobQueue with the specified number of workers,
 // queue buffer size and worker function
 // if workers is 0 or negative, it defaults to the number of CPU cores
 // if size is 0 or negative, it defaults to workers * 4
-func NewQueue[T Job](workers int, size int, worker Worker[T]) *JobQueue[T] {
+func NewJobQueue[T Job](workers int, size int, worker Worker[T]) *JobQueue[T] {
 	if workers <= 0 {
 		workers = 1
 	}
