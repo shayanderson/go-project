@@ -3,7 +3,6 @@ package work
 import (
 	"context"
 	"errors"
-	"runtime"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -62,12 +61,12 @@ func TestQueueDefaults(t *testing.T) {
 		return nil
 	})
 
-	if q.workers != runtime.NumCPU() {
-		t.Fatalf("expected default workers to be %d, got %d", runtime.NumCPU(), q.workers)
+	if q.workers != 1 {
+		t.Fatalf("expected default workers to be 1, got %d", q.workers)
 	}
 
-	if cap(q.queue) != runtime.NumCPU()*4 {
-		t.Fatalf("expected default queue size to be %d, got %d", runtime.NumCPU()*4, cap(q.queue))
+	if cap(q.queue) != 4 {
+		t.Fatalf("expected default queue size to be 4, got %d", cap(q.queue))
 	}
 }
 

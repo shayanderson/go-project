@@ -3,7 +3,6 @@ package work
 import (
 	"context"
 	"errors"
-	"runtime"
 	"sync"
 )
 
@@ -32,7 +31,7 @@ type Queue[T Job] interface {
 // if size is 0 or negative, it defaults to workers * 4
 func NewQueue[T Job](workers int, size int, worker Worker[T]) *JobQueue[T] {
 	if workers <= 0 {
-		workers = runtime.NumCPU()
+		workers = 1
 	}
 	if size <= 0 {
 		size = workers * 4
