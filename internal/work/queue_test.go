@@ -103,14 +103,21 @@ func TestQueueWorkerError(t *testing.T) {
 			return expected
 		},
 	)
+	defer q.Close()
+
+	errs := make(chan error, 1)
+
+	go func() {
+		errs <- q.Run(t.Context())
+	}()
+
+	time.Sleep(time.Millisecond)
 
 	if !q.Push(1) {
 		t.Fatal("expected push to succeed")
 	}
 
-	q.Close()
-
-	err := q.Run(t.Context())
+	err := <-errs
 
 	if err == nil {
 		t.Fatal("expected error")
@@ -132,8 +139,8 @@ func TestQueueNilWorker(t *testing.T) {
 		t.Fatal("expected error")
 	}
 
-	if err.Error() != "worker must be provided" {
-		t.Fatalf("unexpected error: %v", err)
+	if !errors.Is(err, ErrQueueWorkerRequired) {
+		t.Fatalf("expected %v, got %v", ErrQueueWorkerRequired, err)
 	}
 }
 
@@ -155,6 +162,8 @@ func TestQueueClose(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected nil error, got %v", err)
 	}
+
+	q.Close() // should not panic
 }
 
 func TestQueueContextCancel(t *testing.T) {
@@ -209,5 +218,151 @@ func TestQueueDeadlineExceeded(t *testing.T) {
 			context.DeadlineExceeded,
 			err,
 		)
+	}
+}
+
+func TestQueuePushAfterClose(t *testing.T) {
+	t.Parallel()
+
+	q := NewJobQueue(
+		1,
+		10,
+		func(ctx context.Context, i int) error {
+			return nil
+		},
+	)
+
+	done := make(chan any, 1)
+
+	go func() {
+		defer func() {
+			done <- recover()
+		}()
+
+		for {
+			if !q.Push(1) {
+				return
+			}
+		}
+	}()
+
+	time.Sleep(time.Millisecond)
+	q.Close()
+
+	if r := <-done; r != nil {
+		t.Fatalf("expected no panic, got %v", r)
+	}
+}
+
+func TestQueuePushClosed(t *testing.T) {
+	t.Parallel()
+
+	q := NewJobQueue(
+		1,
+		1,
+		func(ctx context.Context, i int) error {
+			return nil
+		},
+	)
+
+	q.Close()
+
+	if q.Push(1) {
+		t.Fatal("expected push to fail on closed queue")
+	}
+}
+
+func TestQueueAlreadyRunning(t *testing.T) {
+	t.Parallel()
+
+	q := NewJobQueue(
+		1,
+		1,
+		func(ctx context.Context, i int) error {
+			return nil
+		},
+	)
+
+	errCh := make(chan error, 1)
+
+	go func() {
+		errCh <- q.Run(t.Context())
+	}()
+
+	time.Sleep(time.Millisecond)
+
+	err := q.Run(t.Context())
+
+	if err == nil {
+		t.Fatal("expected error")
+	}
+
+	if !errors.Is(err, ErrQueueAlreadyRunning) {
+		t.Fatalf("expected %v, got %v", ErrQueueAlreadyRunning, err)
+	}
+
+	q.Close()
+
+	if err := <-errCh; err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+}
+
+func TestQueueWorkers(t *testing.T) {
+	t.Parallel()
+
+	const workers = 4
+	const jobs = 8
+
+	var running atomic.Int32
+	var maxRunning atomic.Int32
+	started := make(chan struct{}, jobs)
+
+	q := NewJobQueue(
+		workers,
+		jobs,
+		func(ctx context.Context, i int) error {
+			n := running.Add(1)
+			defer running.Add(-1)
+
+			for {
+				old := maxRunning.Load()
+				if n <= old || maxRunning.CompareAndSwap(old, n) {
+					break
+				}
+			}
+
+			started <- struct{}{}
+
+			time.Sleep(10 * time.Millisecond)
+
+			return nil
+		},
+	)
+
+	errCh := make(chan error, 1)
+
+	go func() {
+		errCh <- q.Run(t.Context())
+	}()
+
+	for i := range jobs {
+		if !q.Push(i) {
+			t.Fatalf("expected push %d to succeed", i)
+		}
+	}
+
+	for range jobs {
+		<-started
+	}
+
+	q.Close()
+
+	if err := <-errCh; err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+
+	if got := maxRunning.Load(); got != workers {
+		t.Fatalf("expected max running workers to be %d, got %d", workers, got)
 	}
 }

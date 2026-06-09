@@ -4,6 +4,14 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"sync/atomic"
+)
+
+var (
+	// ErrQueueAlreadyRunning is returned when trying to run a queue that is already running
+	ErrQueueAlreadyRunning = errors.New("queue is already running")
+	// ErrQueueWorkerRequired is returned when trying to run a queue without a worker
+	ErrQueueWorkerRequired = errors.New("worker must be provided")
 )
 
 // Job represents a unit of work to be processed by a queue worker
@@ -14,7 +22,10 @@ type Worker[T Job] func(context.Context, T) error
 
 // JobQueue is a queue that processes jobs using a worker function
 type JobQueue[T Job] struct {
+	closed  bool
+	mu      sync.RWMutex
 	queue   chan T
+	running atomic.Bool
 	worker  Worker[T]
 	workers int
 }
@@ -43,15 +54,31 @@ func NewJobQueue[T Job](workers int, size int, worker Worker[T]) *JobQueue[T] {
 	}
 }
 
-// Close closes the job queue, preventing any new jobs from being added
-// after calling Close, the queue will panic if Push is called
+// Close closes the queue and prevents new jobs from being added
+// buffered jobs already in the queue are still processed
+// subsequent calls to Push return false
 func (q *JobQueue[T]) Close() {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	if q.closed {
+		return
+	}
+
+	q.closed = true
 	close(q.queue)
 }
 
 // Push adds a job to the queue
-// returns false if the queue is full and the job cannot be added
+// returns false if the queue is full or the queue is closed and the job cannot be added
 func (q *JobQueue[T]) Push(job T) bool {
+	q.mu.RLock()
+	defer q.mu.RUnlock()
+
+	if q.closed {
+		return false
+	}
+
 	select {
 	case q.queue <- job:
 		return true
@@ -64,8 +91,12 @@ func (q *JobQueue[T]) Push(job T) bool {
 // it blocks until the context is canceled or an error occurs in a worker
 func (q *JobQueue[T]) Run(ctx context.Context) error {
 	if q.worker == nil {
-		return errors.New("worker must be provided")
+		return ErrQueueWorkerRequired
 	}
+	if !q.running.CompareAndSwap(false, true) {
+		return ErrQueueAlreadyRunning
+	}
+	defer q.running.Store(false)
 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
