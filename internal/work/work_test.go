@@ -9,6 +9,261 @@ import (
 	"time"
 )
 
+func TestNewAccumulator_InvalidArgs(t *testing.T) {
+	ctx := t.Context()
+
+	_, err := NewAccumulator(ctx, 0, 1, func(int) {})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+
+	_, err = NewAccumulator(ctx, time.Second, 0, func(int) {})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+
+	_, err = NewAccumulator(ctx, time.Second, 1, nil)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestAccumulator_Max(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	var total int
+
+	a, err := NewAccumulator(
+		ctx,
+		time.Hour,
+		10,
+		func(n int) {
+			total = n
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	a.Add(3)
+	a.Add(4)
+
+	if total != 0 {
+		t.Fatalf("got %d, want 0", total)
+	}
+
+	a.Add(3)
+
+	if total != 10 {
+		t.Fatalf("got %d, want 10", total)
+	}
+}
+
+func TestAccumulator_Delay(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	ch := make(chan int, 1)
+
+	a, err := NewAccumulator(
+		ctx,
+		50*time.Millisecond,
+		100,
+		func(n int) {
+			ch <- n
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	a.Add(3)
+	a.Add(4)
+
+	select {
+	case n := <-ch:
+		if n != 7 {
+			t.Fatalf("got %d, want 7", n)
+		}
+
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for callback")
+	}
+}
+
+func TestAccumulator_Close(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	var total int
+
+	a, err := NewAccumulator(
+		ctx,
+		time.Hour,
+		100,
+		func(n int) {
+			total = n
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	a.Add(2)
+	a.Add(5)
+
+	a.Close()
+
+	if total != 7 {
+		t.Fatalf("got %d, want 7", total)
+	}
+}
+
+func TestAccumulator_CloseEmpty(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	calls := 0
+
+	a, err := NewAccumulator(
+		ctx,
+		time.Hour,
+		100,
+		func(int) {
+			calls++
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	a.Close()
+
+	if calls != 0 {
+		t.Fatalf("got %d calls, want 0", calls)
+	}
+}
+
+func TestAccumulator_CloseTwice(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	calls := 0
+
+	a, err := NewAccumulator(
+		ctx,
+		time.Hour,
+		100,
+		func(int) {
+			calls++
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	a.Add(5)
+
+	a.Close()
+	a.Close()
+
+	if calls != 1 {
+		t.Fatalf("got %d calls, want 1", calls)
+	}
+}
+
+func TestAccumulator_AddAfterClose(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	calls := 0
+
+	a, err := NewAccumulator(
+		ctx,
+		time.Hour,
+		10,
+		func(n int) {
+			calls++
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	a.Add(5)
+	a.Close()
+
+	if calls != 1 {
+		t.Fatalf("got %d calls, want 1", calls)
+	}
+
+	a.Add(5)
+
+	if calls != 1 {
+		t.Fatalf("got %d calls, want 1", calls)
+	}
+}
+
+func TestAccumulator_FlushLockedZero(t *testing.T) {
+	a := &accumulator{
+		fn: func(int) {
+			t.Fatal("should not be called")
+		},
+	}
+
+	a.mu.Lock()
+	a.flushLocked()
+	a.mu.Unlock()
+}
+
+func TestAccumulator_TimerResets(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	ch := make(chan int, 1)
+
+	a, err := NewAccumulator(
+		ctx,
+		50*time.Millisecond,
+		100,
+		func(n int) {
+			ch <- n
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	a.Add(3)
+
+	// wait for half the delay, then add again
+	// this should restart the timer
+	time.Sleep(25 * time.Millisecond)
+
+	a.Add(4)
+
+	// ensure the callback does NOT happen at the original 50ms mark
+	select {
+	case n := <-ch:
+		t.Fatalf("callback fired too early with %d", n)
+
+	case <-time.After(35 * time.Millisecond):
+		// good: callback has not fired yet
+	}
+
+	// it should fire after the delay from the second Add()
+	select {
+	case n := <-ch:
+		if n != 7 {
+			t.Fatalf("got %d, want 7", n)
+		}
+
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for callback")
+	}
+}
+
 func TestRunner(t *testing.T) {
 	runner, ctx := NewRunner(t.Context())
 
