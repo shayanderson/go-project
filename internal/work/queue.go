@@ -36,21 +36,31 @@ type Queue[T Job] interface {
 	Push(T) bool
 }
 
+// QueueOptions represents the options for creating a queue
+type QueueOptions[T Job] struct {
+	// Size is the buffer size of the queue channel
+	Size int
+	// Worker is the function that processes jobs from the queue
+	Worker Worker[T]
+	// Workers is the number of worker goroutines to process jobs from the queue
+	Workers int
+}
+
 // NewJobQueue creates a new JobQueue with the specified number of workers,
 // queue buffer size and worker function
 // if workers is 0 or negative, it defaults to the number of CPU cores
 // if size is 0 or negative, it defaults to workers * 4
-func NewJobQueue[T Job](workers int, size int, worker Worker[T]) *JobQueue[T] {
-	if workers <= 0 {
-		workers = 1
+func NewJobQueue[T Job](opts QueueOptions[T]) *JobQueue[T] {
+	if opts.Workers <= 0 {
+		opts.Workers = 1
 	}
-	if size <= 0 {
-		size = workers * 4
+	if opts.Size <= 0 {
+		opts.Size = opts.Workers * 4
 	}
 	return &JobQueue[T]{
-		workers: workers,
-		queue:   make(chan T, size),
-		worker:  worker,
+		workers: opts.Workers,
+		queue:   make(chan T, opts.Size),
+		worker:  opts.Worker,
 	}
 }
 

@@ -16,13 +16,14 @@ func TestQueue(t *testing.T) {
 
 	var processed atomic.Int32
 
-	q := NewJobQueue(
-		1,
-		2,
-		func(context.Context, int) error {
+	q := NewJobQueue(QueueOptions[int]{
+		Workers: 1,
+		Size:    2,
+		Worker: func(context.Context, int) error {
 			processed.Add(1)
 			return nil
 		},
+	},
 	)
 
 	errCh := make(chan error, 1)
@@ -57,8 +58,12 @@ func TestQueue(t *testing.T) {
 func TestQueueDefaults(t *testing.T) {
 	t.Parallel()
 
-	q := NewJobQueue(0, 0, func(context.Context, int) error {
-		return nil
+	q := NewJobQueue(QueueOptions[int]{
+		Workers: 0,
+		Size:    0,
+		Worker: func(context.Context, int) error {
+			return nil
+		},
 	})
 
 	if q.workers != 1 {
@@ -73,14 +78,14 @@ func TestQueueDefaults(t *testing.T) {
 func TestQueueFull(t *testing.T) {
 	t.Parallel()
 
-	q := NewJobQueue(
-		1,
-		1,
-		func(context.Context, int) error {
+	q := NewJobQueue(QueueOptions[int]{
+		Workers: 1,
+		Size:    1,
+		Worker: func(context.Context, int) error {
 			time.Sleep(time.Second)
 			return nil
 		},
-	)
+	})
 
 	if !q.Push(1) {
 		t.Fatal("expected first push to succeed")
@@ -96,13 +101,13 @@ func TestQueueWorkerError(t *testing.T) {
 
 	expected := errors.New("test error")
 
-	q := NewJobQueue(
-		1,
-		2,
-		func(context.Context, int) error {
+	q := NewJobQueue(QueueOptions[int]{
+		Workers: 1,
+		Size:    2,
+		Worker: func(context.Context, int) error {
 			return expected
 		},
-	)
+	})
 	defer q.Close()
 
 	errs := make(chan error, 1)
@@ -131,7 +136,10 @@ func TestQueueWorkerError(t *testing.T) {
 func TestQueueNilWorker(t *testing.T) {
 	t.Parallel()
 
-	q := NewJobQueue[int](1, 1, nil)
+	q := NewJobQueue(QueueOptions[int]{
+		Workers: 1,
+		Size:    1,
+	})
 
 	err := q.Run(t.Context())
 
@@ -147,13 +155,13 @@ func TestQueueNilWorker(t *testing.T) {
 func TestQueueClose(t *testing.T) {
 	t.Parallel()
 
-	q := NewJobQueue(
-		1,
-		1,
-		func(context.Context, int) error {
+	q := NewJobQueue(QueueOptions[int]{
+		Workers: 1,
+		Size:    1,
+		Worker: func(context.Context, int) error {
 			return nil
 		},
-	)
+	})
 
 	q.Close()
 
@@ -171,13 +179,13 @@ func TestQueueContextCancel(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	q := NewJobQueue(
-		1,
-		1,
-		func(context.Context, int) error {
+	q := NewJobQueue(QueueOptions[int]{
+		Workers: 1,
+		Size:    1,
+		Worker: func(context.Context, int) error {
 			return nil
 		},
-	)
+	})
 
 	errCh := make(chan error, 1)
 
@@ -201,14 +209,14 @@ func TestQueueDeadlineExceeded(t *testing.T) {
 	)
 	defer cancel()
 
-	q := NewJobQueue(
-		1,
-		1,
-		func(context.Context, int) error {
+	q := NewJobQueue(QueueOptions[int]{
+		Workers: 1,
+		Size:    1,
+		Worker: func(context.Context, int) error {
 			time.Sleep(50 * time.Millisecond)
 			return nil
 		},
-	)
+	})
 
 	err := q.Run(ctx)
 
@@ -224,13 +232,13 @@ func TestQueueDeadlineExceeded(t *testing.T) {
 func TestQueuePushAfterClose(t *testing.T) {
 	t.Parallel()
 
-	q := NewJobQueue(
-		1,
-		10,
-		func(ctx context.Context, i int) error {
+	q := NewJobQueue(QueueOptions[int]{
+		Workers: 1,
+		Size:    10,
+		Worker: func(ctx context.Context, i int) error {
 			return nil
 		},
-	)
+	})
 
 	done := make(chan any, 1)
 
@@ -257,13 +265,13 @@ func TestQueuePushAfterClose(t *testing.T) {
 func TestQueuePushClosed(t *testing.T) {
 	t.Parallel()
 
-	q := NewJobQueue(
-		1,
-		1,
-		func(ctx context.Context, i int) error {
+	q := NewJobQueue(QueueOptions[int]{
+		Workers: 1,
+		Size:    1,
+		Worker: func(ctx context.Context, i int) error {
 			return nil
 		},
-	)
+	})
 
 	q.Close()
 
@@ -275,13 +283,13 @@ func TestQueuePushClosed(t *testing.T) {
 func TestQueueAlreadyRunning(t *testing.T) {
 	t.Parallel()
 
-	q := NewJobQueue(
-		1,
-		1,
-		func(ctx context.Context, i int) error {
+	q := NewJobQueue(QueueOptions[int]{
+		Workers: 1,
+		Size:    1,
+		Worker: func(ctx context.Context, i int) error {
 			return nil
 		},
-	)
+	})
 
 	errCh := make(chan error, 1)
 
@@ -318,10 +326,10 @@ func TestQueueWorkers(t *testing.T) {
 	var maxRunning atomic.Int32
 	started := make(chan struct{}, jobs)
 
-	q := NewJobQueue(
-		workers,
-		jobs,
-		func(ctx context.Context, i int) error {
+	q := NewJobQueue(QueueOptions[int]{
+		Workers: workers,
+		Size:    jobs,
+		Worker: func(ctx context.Context, i int) error {
 			n := running.Add(1)
 			defer running.Add(-1)
 
@@ -338,7 +346,7 @@ func TestQueueWorkers(t *testing.T) {
 
 			return nil
 		},
-	)
+	})
 
 	errCh := make(chan error, 1)
 
