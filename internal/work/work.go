@@ -8,7 +8,7 @@ import (
 )
 
 // Accumulator accumulates values and invokes a callback when either:
-//   - the total reaches or exceeds max
+//   - the total reaches or exceeds max (if max > 0)
 //   - delay elapses and total > 0
 //
 // after either condition, the total is reset to zero
@@ -31,6 +31,8 @@ type accumulator struct {
 }
 
 // NewAccumulator creates a new Accumulator
+//
+// a max of zero disables threshold-based flushing
 func NewAccumulator(
 	ctx context.Context,
 	delay time.Duration,
@@ -40,8 +42,8 @@ func NewAccumulator(
 	if delay <= 0 {
 		return nil, errors.New("delay must be greater than zero")
 	}
-	if max < 1 {
-		return nil, errors.New("max must be greater than zero")
+	if max < 0 {
+		return nil, errors.New("max must not be negative")
 	}
 	if fn == nil {
 		return nil, errors.New("fn must not be nil")
@@ -70,7 +72,8 @@ func (a *accumulator) Add(n int) {
 
 	a.total += n
 
-	if a.total >= a.max {
+	// flush on threshold if enabled
+	if a.max > 0 && a.total >= a.max {
 		a.flushLocked()
 		return
 	}

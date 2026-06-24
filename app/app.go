@@ -51,7 +51,7 @@ func (a *App) Run(ctx context.Context) error {
 	// start api server
 	runner.Run(func() error {
 		if err := api.Start(); err != nil {
-			return fmt.Errorf("http server start failed: %w", err)
+			return fmt.Errorf("http server: start failed: %w", err)
 		}
 		return nil
 	})
@@ -60,7 +60,7 @@ func (a *App) Run(ctx context.Context) error {
 	runner.Run(func() error {
 		<-ctx.Done()
 		if err := api.Stop(); err != nil {
-			return fmt.Errorf("http server stop failed: %w", err)
+			return fmt.Errorf("http server: stop failed: %w", err)
 		}
 		return nil
 	})

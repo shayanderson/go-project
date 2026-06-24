@@ -17,12 +17,17 @@ func TestNewAccumulator_InvalidArgs(t *testing.T) {
 		t.Fatal("expected error")
 	}
 
-	_, err = NewAccumulator(ctx, time.Second, 0, func(int) {})
+	_, err = NewAccumulator(ctx, time.Second, -1, func(int) {})
 	if err == nil {
 		t.Fatal("expected error")
 	}
 
 	_, err = NewAccumulator(ctx, time.Second, 1, nil)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+
+	_, err = NewAccumulator(ctx, time.Second, 0, nil)
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -433,4 +438,126 @@ func TestThrottler_RaceSafety(t *testing.T) {
 	}
 
 	wg.Wait()
+}
+
+func TestAccumulator_NoMax(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	ch := make(chan int, 1)
+
+	a, err := NewAccumulator(
+		ctx,
+		50*time.Millisecond,
+		0, // no threshold flushing
+		func(n int) {
+			ch <- n
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	a.Add(3)
+	a.Add(4)
+	a.Add(5)
+
+	// should not flush immediately
+	select {
+	case n := <-ch:
+		t.Fatalf("callback fired too early with %d", n)
+
+	default:
+	}
+
+	// should flush after delay
+	select {
+	case n := <-ch:
+		if n != 12 {
+			t.Fatalf("got %d, want 12", n)
+		}
+
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for callback")
+	}
+}
+
+func TestAccumulator_NoMaxClose(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	var total int
+
+	a, err := NewAccumulator(
+		ctx,
+		time.Hour,
+		0,
+		func(n int) {
+			total = n
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	a.Add(2)
+	a.Add(3)
+
+	a.Close()
+
+	if total != 5 {
+		t.Fatalf("got %d, want 5", total)
+	}
+}
+
+func TestAccumulator_EmptyTimerReset(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	calls := 0
+
+	_, err := NewAccumulator(
+		ctx,
+		10*time.Millisecond,
+		0,
+		func(int) {
+			calls++
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// let several timer expirations happen with total == 0
+	time.Sleep(50 * time.Millisecond)
+
+	if calls != 0 {
+		t.Fatalf("got %d calls, want 0", calls)
+	}
+}
+
+func TestAccumulator_CloseAfterTimerFired(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	done := make(chan struct{}, 1)
+
+	a, err := NewAccumulator(
+		ctx,
+		10*time.Millisecond,
+		0,
+		func(int) {
+			done <- struct{}{}
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	a.Add(1)
+
+	<-done
+
+	// timer has already fired and been drained by run()
+	a.Close()
 }
